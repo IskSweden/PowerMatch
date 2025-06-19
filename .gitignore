@@ -1,0 +1,45 @@
+# ======================
+# Python
+# ======================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+*.sqlite3
+*.db
+*.log
+.Python
+.env
+.venv/
+env/
+venv/
+
+# ======================
+# Node/Vue/Vite Frontend
+# ======================
+node_modules/
+dist/
+.vite/
+*.local
+*.svelte-kit/
+*.tsbuildinfo
+
+# ======================
+# Editor / IDE
+# ======================
+.vscode/
+.idea/
+
+# ======================
+# OS-specific junk
+# ======================
+.DS_Store
+Thumbs.db
+
+# ======================
+# Database & app artifacts
+# ======================
+scores.db
