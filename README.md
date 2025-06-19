@@ -14,7 +14,7 @@ Over a 30-second session, the player’s real-time power input (e.g., from a con
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 - **Backend:** FastAPI + WebSockets
 - **Frontend:** Vue 3 + Vite
@@ -55,6 +55,7 @@ PowerMatch/
 │   ├── package-lock.json
 │   └── vite.config.js
 ├── scores.db              # Local SQLite database for score logging
+├── requirements.txt
 ├── .gitignore
 └── README.md
 ```
@@ -69,9 +70,15 @@ PowerMatch/
 cd backend
 python -m venv .venv
 source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -r requirements.txt
+pip install -r ../requirements.txt
 uvicorn main:app --reload
 ```
+
+> ✅ `requirements.txt` includes:
+> - `fastapi`
+> - `uvicorn`
+> - `paho-mqtt`
+> - `python-dotenv`
 
 ### Frontend
 
@@ -83,9 +90,40 @@ npm run dev
 
 ---
 
-## MQTT Setup
+## MQTT Setup (Mosquitto Broker)
 
-Ensure your MQTT broker is running and that the input device (e.g. Raspberry Pi) is publishing real-time wattage data to the correct topic. The backend subscribes to this topic on startup.
+To simulate or receive real-time power data, this project uses a local [Mosquitto MQTT broker](https://mosquitto.org/).
+
+### Install Mosquitto (Windows)
+
+1. Download from: https://mosquitto.org/download/
+2. Run the installer using default settings.
+3. Note the path to `mosquitto.exe` and `mosquitto.conf`.
+
+### Quick-Start Script (Windows Batch)
+
+To launch everything in one go (MQTT broker + FastAPI server), use this `start_game.bat` script:
+
+```bat
+@echo off
+:: Move to project root
+cd /d C:\Users\skoog\Documents\PowerMatch
+
+echo.
+echo Starting Mosquitto broker...
+start "" "C:\Program Files\mosquitto\mosquitto.exe" -c "C:\Program Files\mosquitto\mosquitto.conf"
+
+echo.
+echo Starting FastAPI game server...
+"C:\Users\skoog\Documents\PowerMatch\.venv\Scripts\python.exe" -m uvicorn backend.main:app --reload
+
+pause
+```
+
+📌 This script assumes:
+- Mosquitto is installed at `C:\Program Files\mosquitto\`
+- Your Python virtual environment is in `.venv\`
+- FastAPI runs from `backend/main.py`
 
 ---
 
@@ -103,8 +141,6 @@ Ensure your MQTT broker is running and that the input device (e.g. Raspberry Pi)
 
 - 🎯 Leaderboard UI
 - 📊 Score analytics
-- 🌐 Multiplayer mode
-- 🔧 Admin panel for difficulty tuning
 
 ---
 
