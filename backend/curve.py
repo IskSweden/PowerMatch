@@ -1,22 +1,40 @@
-import math
 import random
 
 class TargetCurve:
-    def __init__(self, duration):
+    def __init__(self, duration=30, seed=None, difficulty="Medium"):
         self.duration = duration
+        self.seed = seed or random.randint(1000, 9999)
+        self.difficulty = difficulty
         self.values = []
 
-    def generate(self, base=1000, amplitude=500, noise=50, seed=None):
-        seed = seed or random.randint(0, 9999)
-        random.seed(seed)
-        self.values = []
-        for t in range(self.duration):
-            x = 2 * math.pi * t / self.duration
-            value = base + amplitude * math.sin(x * 2)
-            value += random.uniform(-noise, noise)
-            self.values.append(round(value, 2))
+    def generate(self):
+        random.seed(self.seed)
 
-    def get(self, second):
-        if 0 <= second < self.duration:
+        # Initial base value: ~30W with ±5 jitter
+        base = random.uniform(25, 35)
+        self.values = [round(base, 1)]
+
+        # Difficulty volatility scaling
+        volatility_map = {
+            "Easy": (5, 10),
+            "Medium": (10, 15),
+            "Hard": (15, 20)
+        }
+        min_delta, max_delta = volatility_map.get(self.difficulty, (10, 15))
+
+        for t in range(1, self.duration):
+            # Linearly ramp up volatility
+            progress = t / (self.duration - 1)
+            max_step = min_delta + (max_delta - min_delta) * progress
+
+            # Random walk: small positive/negative drift
+            last = self.values[-1]
+            delta = random.uniform(-max_step, max_step)
+
+            next_val = max(10, min(2000, last + delta))  # clamp between 10W and 2000W
+            self.values.append(round(next_val, 1))
+
+    def get(self, second: int):
+        if 0 <= second < len(self.values):
             return self.values[second]
         return None

@@ -19,7 +19,6 @@ const chartCanvas = ref(null)
 let chart
 
 onMounted(() => {
-  // Set up the chart
   chart = new Chart(chartCanvas.value, {
     type: 'line',
     data: {
@@ -48,27 +47,33 @@ onMounted(() => {
     }
   })
 
-  // Open WebSocket to backend game engine
   const ws = new WebSocket("ws://localhost:8000/ws/game")
+
+  ws.onopen = () => {
+    const name = sessionStorage.getItem("playerName") || "Unknown"
+    const difficulty = sessionStorage.getItem("difficulty") || "Medium"
+    console.log("📤 Sending config to backend:", { name, difficulty })
+    ws.send(JSON.stringify({ name, difficulty }))
+  }
 
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data)
 
     if (data.gameTick) {
       const { second, actual, target, tickScore, totalScore } = data.gameTick
-
       timeLeft.value = 30 - second
       score.value = totalScore
 
       chart.data.labels.push(second)
       chart.data.datasets[0].data.push(actual || 0)
       chart.data.datasets[1].data.push(target || 0)
-
       chart.update()
     }
 
     if (data.gameEnd) {
-      console.log("Game over:", data.gameEnd)
+      console.log("🎯 Game Over. Score:", data.gameEnd.totalScore)
+      sessionStorage.setItem("finalScore", data.gameEnd.totalScore)
+      window.location.href = "/end"
     }
   }
 })
@@ -81,6 +86,7 @@ onMounted(() => {
   padding: 2rem;
   font-family: sans-serif;
 }
+
 .status-bar {
   display: flex;
   justify-content: space-between;

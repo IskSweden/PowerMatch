@@ -1,5 +1,6 @@
 import asyncio
 from backend.curve import TargetCurve
+from backend.db import Score, SessionLocal
 
 class GameEngine:
     def __init__(self, ws_manager, duration=30, loop=None):
@@ -12,15 +13,22 @@ class GameEngine:
         self.total_score = 0
         self.start_time = None
         self.is_running = False
+        self.player_name = "Unknown"
+        self.difficulty = "Medium"
+
+    def set_player_context(self, name: str, difficulty: str):
+        print(f"Setting player context: {name}, Difficulty: {difficulty}") # Debug log
+        self.player_name = name
+        self.difficulty = difficulty
 
     def start(self):
         if self.is_running:
-            print("Game already running.")
+            print("⚠️ Game already running.")
             return
-        print("✅ Game started.")
+        print(f"✅ Game started for {self.player_name} on {self.difficulty}")
         self.start_time = self.loop.time()
         self.is_running = True
-        self.curve.generate()  # new curve each round
+        self.curve.generate()
         self.actual_values = [None] * self.duration
         self.scores = [0] * self.duration
         self.total_score = 0
@@ -62,5 +70,17 @@ class GameEngine:
             }
         })
 
+        self._save_score()
         self.is_running = False
-        print("Game ended.")
+        print("✅ Game ended and score saved.")
+
+    def _save_score(self):
+        db = SessionLocal()
+        db_score = Score(
+            name=self.player_name,
+            difficulty=self.difficulty,
+            score=self.total_score
+        )
+        db.add(db_score)
+        db.commit()
+        db.close()

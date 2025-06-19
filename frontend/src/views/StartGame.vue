@@ -40,36 +40,54 @@
           </button>
         </div>
 
-        <router-link to="/game">
-          <button class="start-btn">Start</button>
-        </router-link>
+        <button class="start-btn" @click="startGame">Start Game</button>
       </div>
     </div>
   </div>
 </template>
 
+
+
+
+
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 
-const playerName = ref('Finn')
-const difficulty = ref('Hard')
+const router = useRouter()
+
+const playerName = ref('Name')
+const difficulty = ref('Medium')
+
+function startGame() {
+  sessionStorage.setItem("playerName", playerName.value || 'Unknown')
+  sessionStorage.setItem("difficulty", difficulty.value || 'Medium')
+
+  // Wait for sessionStorage to flush before navigating
+  setTimeout(() => {
+    console.log("Saved to session:", playerName.value, difficulty.value)
+    router.push('/game')
+  }, 10)  // 10ms is enough
+}
+
 
 // dummy data for now
-const alltime = [
+const alltime = ref([
   { name: 'Finn', score: 7822 },
   { name: 'Lara', score: 7310 },
   { name: 'Jonas', score: 6892 },
   { name: 'Nico', score: 6645 },
   { name: 'Emma', score: 6308 }
-]
+])
 
-const recent = [
+const recent = ref([
   { name: 'Felix', score: 3823 },
   { name: 'Jakob', score: 3651 },
   { name: 'Mia', score: 3541 },
   { name: 'Tom', score: 3427 },
   { name: 'Anna', score: 3309 }
-]
+])
+
 </script>
 
 <style scoped>

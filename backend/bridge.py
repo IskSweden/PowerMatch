@@ -5,6 +5,7 @@ from backend.websocket_manager import WebSocketManager
 from backend.engine import GameEngine
 
 class PowerDataBridge:
+    from backend.db import Score, SessionLocal
     def __init__(self, mqtt_topic: str, ws_manager: WebSocketManager, loop=None):
         self.ws_manager = ws_manager
         self.loop = loop or asyncio.get_event_loop()
@@ -27,5 +28,5 @@ class PowerDataBridge:
                     self.engine.register_wattage(value)
                     break
         except Exception as e:
-            print(f"❌ Failed to parse MQTT message: {e}")
+            print(f"Failed to parse MQTT message: {e}")
 
