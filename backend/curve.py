@@ -9,30 +9,62 @@ class TargetCurve:
 
     def generate(self):
         random.seed(self.seed)
+        self.values = []
 
-        # Initial base value: ~30W with ±5 jitter
-        base = random.uniform(25, 35)
-        self.values = [round(base, 1)]
-
-        # Difficulty volatility scaling
-        volatility_map = {
-            "Easy": (5, 10),
-            "Medium": (10, 15),
-            "Hard": (15, 20)
+        # Difficulty-specific volatility ranges
+        delta_ranges = {
+            "Easy":   (6, 12),
+            "Medium": (8, 15),
+            "Hard":   (10, 20)
         }
-        min_delta, max_delta = volatility_map.get(self.difficulty, (10, 15))
+        min_delta, max_delta = delta_ranges.get(self.difficulty, (8, 15))
 
-        for t in range(1, self.duration):
-            # Linearly ramp up volatility
-            progress = t / (self.duration - 1)
-            max_step = min_delta + (max_delta - min_delta) * progress
+        # Starting value
+        current = int(random.uniform(20, 40))
+        self.values.append(current)
+        tick = 1
 
-            # Random walk: small positive/negative drift
-            last = self.values[-1]
-            delta = random.uniform(-max_step, max_step)
+        while tick < self.duration:
+            cluster_length = min(random.choices([2, 3, 4, 5], weights=[1, 2, 2, 1])[0], self.duration - tick)
+            progress = tick / (self.duration - 1)
+            current_max_delta = min_delta + (max_delta - min_delta) * progress
 
-            next_val = max(10, min(2000, last + delta))  # clamp between 10W and 2000W
-            self.values.append(round(next_val, 1))
+            # Force high jump every ~8 ticks
+            if tick % 8 == 0 and random.random() < 0.6:
+                current_max_delta *= random.uniform(1.5, 2.0)
+
+            step = random.choice([-1, 1]) * random.uniform(min_delta, current_max_delta)
+
+            if abs(step) < 2:
+                step = 2.0 * (1 if step > 0 else -1)
+
+            new_value = max(0, min(135, current + step))
+            new_value = int(round(new_value))
+
+            for _ in range(cluster_length):
+                self.values.append(new_value)
+                tick += 1
+                if tick >= self.duration:
+                    break
+
+            current = new_value
+
+        # Force range coverage
+        self._enforce_range_requirements()
+
+    def _enforce_range_requirements(self):
+        has_low = any(val <= 20 for val in self.values)
+        has_high = any(val >= 120 for val in self.values)
+
+        indices = list(range(len(self.values)))
+
+        if not has_low:
+            insert_at = random.choice(indices[:10])  # early in the curve
+            self.values[insert_at] = random.randint(0, 15)
+
+        if not has_high:
+            insert_at = random.choice(indices[-10:])  # later in the curve
+            self.values[insert_at] = random.randint(125, 135)
 
     def get(self, second: int):
         if 0 <= second < len(self.values):

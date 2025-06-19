@@ -17,6 +17,7 @@ class Score(Base):
     name = Column(String)
     difficulty = Column(String)
     score = Column(Float)
+    seed = Column(Integer)  # Random seed used for curve generation
     timestamp = Column(DateTime, default=datetime.utcnow)
 
 def init_db():

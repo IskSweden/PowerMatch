@@ -5,9 +5,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi import APIRouter
 from backend.bridge import PowerDataBridge
 from backend.websocket_manager import WebSocketManager
 from backend.db import init_db
+from backend.db import Score, SessionLocal
+from datetime import datetime, timedelta
 
 # Initialize the database
 init_db()
@@ -55,6 +58,31 @@ async def game_socket(websocket: WebSocket):
 async def vue_routes():
     return FileResponse(os.path.join(DIST_DIR, "index.html"))
 
+# API router for scores
+@app.get("/api/highscores")
+def get_highscores():
+    db = SessionLocal()
+    now = datetime.utcnow()
+    day_ago = now - timedelta(hours=24)
+
+    alltime = db.query(Score).order_by(Score.score.desc()).limit(5).all()
+    recent = db.query(Score).filter(Score.timestamp >= day_ago).order_by(Score.score.desc()).limit(5).all()
+
+    def to_dict(score):
+        return {
+            "name": score.name,
+            "score": int(score.score)
+        }
+
+    return {
+        "alltime": [to_dict(s) for s in alltime],
+        "recent": [to_dict(s) for s in recent]
+    }
+
+
+
 # ✅ Mount the frontend build (must come last)
 app.mount("/assets", StaticFiles(directory=os.path.join(DIST_DIR, "assets")), name="assets")
 app.mount("/", StaticFiles(directory=DIST_DIR, html=True), name="static")
+
+

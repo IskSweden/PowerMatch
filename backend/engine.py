@@ -1,13 +1,13 @@
 import asyncio
 from backend.curve import TargetCurve
 from backend.db import Score, SessionLocal
+import random
 
 class GameEngine:
     def __init__(self, ws_manager, duration=30, loop=None):
         self.ws_manager = ws_manager
         self.duration = duration
         self.loop = loop or asyncio.get_event_loop()
-        self.curve = TargetCurve(duration)
         self.actual_values = [None] * duration
         self.scores = [0] * duration
         self.total_score = 0
@@ -15,20 +15,27 @@ class GameEngine:
         self.is_running = False
         self.player_name = "Unknown"
         self.difficulty = "Medium"
+        self.seed = random.randint(1000, 9999)
+        self.curve = None  # will be generated on start
 
     def set_player_context(self, name: str, difficulty: str):
-        print(f"Setting player context: {name}, Difficulty: {difficulty}") # Debug log
+        print(f"Setting player context: {name}, Difficulty: {difficulty}")
         self.player_name = name
         self.difficulty = difficulty
 
     def start(self):
         if self.is_running:
-            print("⚠️ Game already running.")
+            print("Game already running.")
             return
-        print(f"✅ Game started for {self.player_name} on {self.difficulty}")
+
+        self.seed = random.randint(1000, 9999)
+        self.curve = TargetCurve(seed=self.seed, difficulty=self.difficulty)
+        self.curve.generate()
+
+        print(f"Game started for {self.player_name} on {self.difficulty} (seed {self.seed})")
+
         self.start_time = self.loop.time()
         self.is_running = True
-        self.curve.generate()
         self.actual_values = [None] * self.duration
         self.scores = [0] * self.duration
         self.total_score = 0
@@ -44,20 +51,23 @@ class GameEngine:
     async def _game_loop(self):
         for second in range(self.duration):
             await asyncio.sleep(1)
+
             actual = self.actual_values[second]
             target = self.curve.get(second)
 
-            if actual is not None:
-                score = max(0, 100 - abs(actual - target))
-                self.scores[second] = round(score, 1)
-                self.total_score += score
+            tolerance = self._get_tolerance(second)
+            score = self._calculate_score(actual, target, tolerance)
+
+            self.scores[second] = score
+            self.total_score += score
 
             await self.ws_manager.broadcast({
                 "gameTick": {
                     "second": second,
                     "actual": actual,
                     "target": target,
-                    "tickScore": self.scores[second],
+                    "tolerance": tolerance,
+                    "tickScore": score,
                     "totalScore": round(self.total_score, 1)
                 }
             })
@@ -66,20 +76,54 @@ class GameEngine:
             "gameEnd": {
                 "totalScore": round(self.total_score, 1),
                 "actual": self.actual_values,
-                "targetCurve": self.curve.values
+                "targetCurve": self.curve.values,
+                "seed": self.seed,
+                "difficulty": self.difficulty,
+                "player": self.player_name
             }
         })
 
         self._save_score()
         self.is_running = False
-        print("✅ Game ended and score saved.")
+        print("Game ended and score saved.")
+
+    def _calculate_score(self, actual, target, tolerance):
+        if actual is None or target is None:
+            return 0.0
+
+        error = abs(actual - target)
+
+        if error > tolerance:
+            return 0.0
+
+        base_score = 1.0 - (error / tolerance)
+        multiplier = {
+            "Easy": 1.0,
+            "Medium": 1.5,
+            "Hard": 2.0
+        }.get(self.difficulty, 1.5)
+        print(f"[TICK SCORE] Actual={actual}, Target={target}, Tolerance={tolerance} → Score={base_score * multiplier}")
+        return round(base_score * multiplier, 1)
+
+    def _get_tolerance(self, tick):
+        # Tolerance ramps down across game
+        tolerance_range = {
+            "Easy": (12, 8),
+            "Medium": (10, 6),
+            "Hard": (8, 5)
+        }
+        start_tol, end_tol = tolerance_range.get(self.difficulty, (10, 6))
+        progress = tick / (self.duration - 1)
+        return round(start_tol + (end_tol - start_tol) * progress, 2)
 
     def _save_score(self):
         db = SessionLocal()
+        print(f"Saving score for {self.player_name}: {round(self.total_score, 1)} ({self.difficulty}, seed {self.seed})")
         db_score = Score(
             name=self.player_name,
             difficulty=self.difficulty,
-            score=self.total_score
+            score=round(self.total_score, 1),
+            seed=self.seed
         )
         db.add(db_score)
         db.commit()

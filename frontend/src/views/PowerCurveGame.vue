@@ -1,9 +1,11 @@
 <template>
   <div class="game-container">
-    <h1>⚡ Power Curve</h1>
     <div class="status-bar">
-      <span>⏱ Time Left: {{ timeLeft }}s</span>
-      <span>📊 Score: {{ score }}</span>
+      <h1>⚡ PowerMatch</h1>
+      <div class="status-info">
+        <span>Zeit: {{ timeLeft }}s</span>
+        <span>Punkte: {{ score.toFixed(1) }}</span>
+      </div>
     </div>
     <canvas ref="chartCanvas"></canvas>
   </div>
@@ -26,7 +28,7 @@ onMounted(() => {
       datasets: [
         {
           label: 'Live Power (W)',
-          borderColor: 'blue',
+          borderColor: 'green',
           data: [],
           fill: false
         },
@@ -35,6 +37,22 @@ onMounted(() => {
           borderColor: 'orange',
           data: [],
           fill: false
+        },
+        {
+          label: 'Upper Tolerance',
+          borderColor: 'rgba(0,0,0,0.4)',
+          borderDash: [4, 4],
+          data: [],
+          fill: false,
+          pointRadius: 0
+        },
+        {
+          label: 'Lower Tolerance',
+          borderColor: 'rgba(0,0,0,0.4)',
+          borderDash: [4, 4],
+          data: [],
+          fill: false,
+          pointRadius: 0
         }
       ]
     },
@@ -42,7 +60,7 @@ onMounted(() => {
       animation: false,
       scales: {
         x: { title: { display: true, text: 'Time (s)' } },
-        y: { title: { display: true, text: 'Watts' }, min: 0, max: 3000 }
+        y: { title: { display: true, text: 'Watts' }, min: 0, max: 300 }
       }
     }
   })
@@ -52,7 +70,7 @@ onMounted(() => {
   ws.onopen = () => {
     const name = sessionStorage.getItem("playerName") || "Unknown"
     const difficulty = sessionStorage.getItem("difficulty") || "Medium"
-    console.log("📤 Sending config to backend:", { name, difficulty })
+    console.log("Sending config to backend:", { name, difficulty })
     ws.send(JSON.stringify({ name, difficulty }))
   }
 
@@ -60,18 +78,26 @@ onMounted(() => {
     const data = JSON.parse(event.data)
 
     if (data.gameTick) {
-      const { second, actual, target, tickScore, totalScore } = data.gameTick
+      const { second, actual, target, tolerance, tickScore, totalScore } = data.gameTick
       timeLeft.value = 30 - second
       score.value = totalScore
 
       chart.data.labels.push(second)
+      // Limit to last 10 ticks
+      if (chart.data.labels.length > 10) {
+      chart.data.labels.shift()
+      chart.data.datasets.forEach(dataset => dataset.data.shift())
+      }
       chart.data.datasets[0].data.push(actual || 0)
       chart.data.datasets[1].data.push(target || 0)
+      chart.data.datasets[2].data.push((target || 0) + (tolerance || 0)) // upper band
+      chart.data.datasets[3].data.push((target || 0) - (tolerance || 0)) // lower band
+
       chart.update()
     }
 
     if (data.gameEnd) {
-      console.log("🎯 Game Over. Score:", data.gameEnd.totalScore)
+      console.log("Game Over. Score:", data.gameEnd.totalScore)
       sessionStorage.setItem("finalScore", data.gameEnd.totalScore)
       window.location.href = "/end"
     }
@@ -80,17 +106,43 @@ onMounted(() => {
 </script>
 
 <style scoped>
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: #000000;
+}
+
+canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 .game-container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 1rem;
   font-family: sans-serif;
+  color: rgb(170, 169, 169);
+  background-color: #fffdfd;
 }
 
 .status-bar {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.status-bar h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.status-info {
+  display: flex;
+  gap: 1.5rem;
   font-size: 1.2rem;
 }
 </style>

@@ -11,15 +11,19 @@
         <div class="score-lists">
           <div>
             <h3>Alltime</h3>
-            <ul>
-              <li v-for="(score, i) in alltime" :key="i">{{ score.name }} — {{ score.score }}</li>
+            <ul v-if="alltime.value?.length">
+              <li v-for="(score, i) in alltime.value" :key="i">
+                {{ score.name }} — {{ score.score }}
+              </li>
             </ul>
-          </div>
-          <div>
-            <h3>Last 24 h</h3>
-            <ul>
-              <li v-for="(score, i) in recent" :key="i">{{ score.name }} — {{ score.score }}</li>
+            <p v-else>No alltime scores yet.</p>
+            <h3>Recent Scores</h3>
+            <ul v-if="recent.value?.length">
+              <li v-for="(score, i) in recent.value" :key="i">
+                {{ score.name }} — {{ score.score }}
+              </li>
             </ul>
+            <p v-else>No recent scores yet.</p>
           </div>
         </div>
       </div>
@@ -46,12 +50,8 @@
   </div>
 </template>
 
-
-
-
-
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -59,35 +59,33 @@ const router = useRouter()
 const playerName = ref('Name')
 const difficulty = ref('Medium')
 
+const alltime = ref([])
+const recent = ref([])
+
 function startGame() {
   sessionStorage.setItem("playerName", playerName.value || 'Unknown')
   sessionStorage.setItem("difficulty", difficulty.value || 'Medium')
 
-  // Wait for sessionStorage to flush before navigating
   setTimeout(() => {
     console.log("Saved to session:", playerName.value, difficulty.value)
     router.push('/game')
-  }, 10)  // 10ms is enough
+  }, 10)
 }
 
+onMounted(async () => {
+  try {
+    const res = await fetch("/api/highscores")
+    const data = await res.json()
 
-// dummy data for now
-const alltime = ref([
-  { name: 'Finn', score: 7822 },
-  { name: 'Lara', score: 7310 },
-  { name: 'Jonas', score: 6892 },
-  { name: 'Nico', score: 6645 },
-  { name: 'Emma', score: 6308 }
-])
+    console.log("Fetched highscores:", data)
+    console.log("Is alltime an array?", Array.isArray(data.alltime))
 
-const recent = ref([
-  { name: 'Felix', score: 3823 },
-  { name: 'Jakob', score: 3651 },
-  { name: 'Mia', score: 3541 },
-  { name: 'Tom', score: 3427 },
-  { name: 'Anna', score: 3309 }
-])
-
+    alltime.value = Array.isArray(data.alltime) ? data.alltime : []
+    recent.value = Array.isArray(data.recent) ? data.recent : []
+  } catch (err) {
+    console.error("❌ Failed to fetch highscores", err)
+  }
+})
 </script>
 
 <style scoped>
