@@ -16,7 +16,7 @@ class GameEngine:
         self.player_name = "Unknown"
         self.difficulty = "Medium"
         self.seed = random.randint(1000, 9999)
-        self.curve = None  # will be generated on start
+        self.curve = None
 
     def set_player_context(self, name: str, difficulty: str):
         print(f"Setting player context: {name}, Difficulty: {difficulty}")
@@ -31,6 +31,10 @@ class GameEngine:
         self.seed = random.randint(1000, 9999)
         self.curve = TargetCurve(seed=self.seed, difficulty=self.difficulty)
         self.curve.generate()
+
+        print(f"Generated curve for seed {self.seed}:")
+        print(self.curve.values)
+        print("-" * 60)
 
         print(f"Game started for {self.player_name} on {self.difficulty} (seed {self.seed})")
 
@@ -82,10 +86,8 @@ class GameEngine:
                 "player": self.player_name
             }
         })
-
         self._save_score()
-        self.is_running = False
-        print("Game ended and score saved.")
+
 
     def _calculate_score(self, actual, target, tolerance):
         if actual is None or target is None:
@@ -93,7 +95,16 @@ class GameEngine:
 
         error = abs(actual - target)
 
-        if error > tolerance:
+        # ✅ Allow perfect score when both are zero
+        if error == 0:
+            multiplier = {
+                "Easy": 1.0,
+                "Medium": 1.5,
+                "Hard": 2.0
+            }.get(self.difficulty, 1.5)
+            return round(1.0 * multiplier, 1)
+
+        if error > tolerance or tolerance <= 0:
             return 0.0
 
         base_score = 1.0 - (error / tolerance)
@@ -105,8 +116,8 @@ class GameEngine:
         print(f"[TICK SCORE] Actual={actual}, Target={target}, Tolerance={tolerance} → Score={base_score * multiplier}")
         return round(base_score * multiplier, 1)
 
+
     def _get_tolerance(self, tick):
-        # Tolerance ramps down across game
         tolerance_range = {
             "Easy": (12, 8),
             "Medium": (10, 6),
@@ -115,6 +126,17 @@ class GameEngine:
         start_tol, end_tol = tolerance_range.get(self.difficulty, (10, 6))
         progress = tick / (self.duration - 1)
         return round(start_tol + (end_tol - start_tol) * progress, 2)
+
+    def get_curve_preview(self):
+        if not self.curve:
+            self.seed = random.randint(1000, 9999)
+            self.curve = TargetCurve(seed=self.seed, difficulty=self.difficulty)
+            self.curve.generate()
+
+        target = self.curve.values
+        tolerance = [self._get_tolerance(tick) for tick in range(self.duration)]
+        return target, tolerance
+
 
     def _save_score(self):
         db = SessionLocal()

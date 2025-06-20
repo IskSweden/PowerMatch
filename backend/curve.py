@@ -11,35 +11,29 @@ class TargetCurve:
         random.seed(self.seed)
         self.values = []
 
-        # Difficulty-specific volatility ranges
         delta_ranges = {
-            "Easy":   (6, 12),
-            "Medium": (8, 15),
-            "Hard":   (10, 20)
+            "Easy": (15, 30),
+            "Medium": (25, 45),
+            "Hard": (35, 60)
         }
-        min_delta, max_delta = delta_ranges.get(self.difficulty, (8, 15))
+        min_delta, max_delta = delta_ranges.get(self.difficulty, (25, 45))
 
-        # Starting value
-        current = int(random.uniform(20, 40))
-        self.values.append(current)
-        tick = 1
+        # Start with a stable 3-tick flat segment
+        stable_value = int(round(random.uniform(20, 60) / 5.0) * 5)
+        self.values.extend([stable_value] * 3)
+        current = stable_value
+        tick = 3
 
         while tick < self.duration:
-            cluster_length = min(random.choices([2, 3, 4, 5], weights=[1, 2, 2, 1])[0], self.duration - tick)
+            cluster_length = min(random.choice([2, 3]), self.duration - tick)
             progress = tick / (self.duration - 1)
-            current_max_delta = min_delta + (max_delta - min_delta) * progress
+            max_step = min_delta + (max_delta - min_delta) * progress
 
-            # Force high jump every ~8 ticks
-            if tick % 8 == 0 and random.random() < 0.6:
-                current_max_delta *= random.uniform(1.5, 2.0)
-
-            step = random.choice([-1, 1]) * random.uniform(min_delta, current_max_delta)
-
-            if abs(step) < 2:
-                step = 2.0 * (1 if step > 0 else -1)
-
-            new_value = max(0, min(135, current + step))
-            new_value = int(round(new_value))
+            for _ in range(10):  # ensure a meaningful jump
+                step = random.choice([-1, 1]) * random.uniform(min_delta, max_step)
+                new_value = int(round(max(0, min(135, current + step)) / 5.0) * 5)
+                if abs(new_value - current) >= min_delta:
+                    break
 
             for _ in range(cluster_length):
                 self.values.append(new_value)
@@ -49,8 +43,10 @@ class TargetCurve:
 
             current = new_value
 
-        # Force range coverage
         self._enforce_range_requirements()
+
+
+
 
     def _enforce_range_requirements(self):
         has_low = any(val <= 20 for val in self.values)
@@ -59,12 +55,14 @@ class TargetCurve:
         indices = list(range(len(self.values)))
 
         if not has_low:
-            insert_at = random.choice(indices[:10])  # early in the curve
-            self.values[insert_at] = random.randint(0, 15)
+            for _ in range(2):
+                insert_at = random.choice(indices[:10])  # early in the curve
+                self.values[insert_at] = random.randint(5, 20)
 
         if not has_high:
-            insert_at = random.choice(indices[-10:])  # later in the curve
-            self.values[insert_at] = random.randint(125, 135)
+            for _ in range(2):
+                insert_at = random.choice(indices[-10:])  # later in the curve
+                self.values[insert_at] = random.randint(120, 135)
 
     def get(self, second: int):
         if 0 <= second < len(self.values):

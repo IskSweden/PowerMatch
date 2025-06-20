@@ -1,6 +1,7 @@
 import os
 import asyncio
 import json
+from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,7 +11,7 @@ from backend.bridge import PowerDataBridge
 from backend.websocket_manager import WebSocketManager
 from backend.db import init_db
 from backend.db import Score, SessionLocal
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Initialize the database
 init_db()
@@ -35,6 +36,10 @@ loop = asyncio.get_event_loop()
 bridge = PowerDataBridge("/eniwa/energy/device/1091A8AAAA28/status/evt", ws_manager, loop=loop)
 bridge.start()
 
+from datetime import datetime
+
+# ...existing code...
+
 @app.websocket("/ws/game")
 async def game_socket(websocket: WebSocket):
     print("WebSocket connected at /ws/game")
@@ -44,11 +49,40 @@ async def game_socket(websocket: WebSocket):
         data = json.loads(message)
         name = data.get("name", "Unknown")
         difficulty = data.get("difficulty", "Medium")
+
         bridge.engine.set_player_context(name, difficulty)
+
+        # Generate preview BEFORE starting game
+        target, tolerance = bridge.engine.get_curve_preview()
+
+        # Add start_time (UTC timestamp)
+        start_time = datetime.now(timezone.utc).timestamp()
+
+        await websocket.send_json({
+            "type": "init",
+            "targetCurve": target,
+            "toleranceCurve": tolerance,
+            "difficulty": difficulty,
+            "seed": bridge.engine.seed,
+            "duration": len(target),
+            "start_time": start_time   # <-- add this line
+        })
+
         bridge.engine.start()
+
         while True:
             await websocket.receive_text()
+
     except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        ws_manager.disconnect(websocket)
+
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
         ws_manager.disconnect(websocket)
 
 # ✅ These frontend paths should always return index.html
