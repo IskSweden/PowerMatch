@@ -31,6 +31,7 @@ class MQTTInputHandler:
             for item in reader_data:
                 if "1-0:1.7.0.255" in item:
                     watt_value = float(item["1-0:1.7.0.255"])
+                    watt_value = watt_value * 1000 # kw to W
                     break
 
             if watt_value is not None:
