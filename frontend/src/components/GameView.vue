@@ -1,29 +1,5 @@
-<template>
-  <div class="game-wrapper">
-    <div v-if="loading" class="loading-overlay">
-      <h1>Loading PowerMatch...</h1>
-    </div>
-
-    <div v-else>
-      <div class="info-bar">
-        <div>⏱ {{ timeLeft }}s</div>
-        <h1>PowerMatch</h1>
-        <div>⭐ {{ roundedScore }}</div>
-      </div>
-
-      <div class="chart-container">
-        <LineChart
-          v-if="chartReady && chartData.labels.length > 0"
-          :data="chartData"
-          :options="chartOptions"
-        />
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
 import {
@@ -73,15 +49,26 @@ const startTime = ref(Date.now() / 1000)
 const roundedScore = computed(() => score.value.toFixed(1))
 
 const chartReady = computed(
-  () => actualData.value.length > 0 && targetCurve.value.length > 0 && toleranceCurve.value.length > 0
+  () => actualData.value.length > 0 && targetCurve.value.length > 0 && toleranceCurve.value.length > 0,
+
+  console.log(targetCurve.value.length),    // should be 30
+  console.log(interpolatedTarget.value.length)
+
+
 )
 
 const chartData = computed(() => {
-  const currentLen = interpolatedActual.value.length
+  const currentLen = interpolatedTarget.value.length
   const start = Math.max(0, currentLen - displayWindow * 30)
   const end = currentLen
 
-  const labels = Array.from({ length: end - start }, (_, i) => ((start + i) / 30).toFixed(1))
+  // Label timeline: 30fps window from gameTime
+  const now = Date.now() / 1000
+  const gameTime = now - startTime.value
+
+  const labels = Array.from({ length: end - start }, (_, i) =>
+    ((i - (end - start)) / 30 + gameTime).toFixed(1)
+  )
 
   return {
     labels,
@@ -92,20 +79,27 @@ const chartData = computed(() => {
         borderColor: 'rgba(255, 99, 132, 0.8)',
         borderWidth: 2,
         tension: 0.4,
-        pointRadius: 0
+        pointRadius: 0,
+        fill: false
       },
       {
+        type: 'line',
         label: 'Target',
         data: interpolatedTarget.value.slice(start, end),
         borderColor: 'rgba(54, 162, 235, 0.7)',
         borderDash: [5, 5],
         borderWidth: 2,
-        tension: 0.4,
-        pointRadius: 0
+        tension: 0,
+        stepped: true,
+        pointRadius: 0,
+        fill: false
       }
     ]
   }
 })
+
+
+
 
 const chartOptions = {
   responsive: true,
@@ -150,23 +144,51 @@ const chartOptions = {
   }
 }
 
+let lastTick = -1
+let lastTarget = 0
+let lastActual = 0
+
 const interpolate = () => {
   requestAnimationFrame(interpolate)
 
-  if (!initialized.value || !chartReady.value) return
+  if (!initialized.value || targetCurve.value.length === 0) return
 
   const now = Date.now() / 1000
-  const tick = Math.floor(now - startTime.value)
-  const alpha = (now - startTime.value) % 1
+  const gameTime = now - startTime.value
+  const tick = Math.floor(gameTime)
 
-  const a0 = actualData.value[tick] ?? actualData.value.at(-1) ?? 0
-  const a1 = actualData.value[tick + 1] ?? a0
-  interpolatedActual.value.push(a0 + (a1 - a0) * alpha)
+  if (tick >= 30) {
+    router.push({
+      path: '/end',
+      query: {
+        score: score.value,
+        name,
+        difficulty
+      }
+    })
+    return
+  }
 
-  const t0 = targetCurve.value[tick] ?? targetCurve.value.at(-1) ?? 0
-  const t1 = targetCurve.value[tick + 1] ?? t0
-  interpolatedTarget.value.push(t0 + (t1 - t0) * alpha)
+  // Only update tick-based values once per second
+  if (tick !== lastTick) {
+    lastTick = tick
+    if (actualData.value.length > tick) {
+      lastActual = actualData.value[tick]
+    }
+
+    lastTarget = targetCurve.value[tick] ?? lastTarget
+  }
+
+  // Push last known values at 60fps
+  interpolatedActual.value.push(lastActual)
+  interpolatedTarget.value.push(lastTarget)
 }
+
+
+
+
+
+
 
 const connectSocket = () => {
   const socket = new WebSocket(
@@ -183,13 +205,21 @@ const connectSocket = () => {
     if (data.type === 'init' && !initialized.value) {
       targetCurve.value = data.targetCurve || []
       toleranceCurve.value = data.toleranceCurve || []
-      startTime.value = data.start_time || Date.now() / 1000
       initialized.value = true
       loading.value = false
+
+      startTime.value = Date.now() / 1000
+
+      console.log("Game initialized")
+      console.log("targetCurve:", data.targetCurve)
+      console.log("length:", data.targetCurve?.length)
+
     }
 
     if (data.type === 'tick') {
-      actualData.value.push(data.actual)
+      if (typeof data.actual === 'number') {
+        actualData.value.push(data.actual)
+      }
       score.value = data.totalScore
       timeLeft.value = Math.max(0, 30 - actualData.value.length)
     }
@@ -212,9 +242,38 @@ const connectSocket = () => {
 
 onMounted(() => {
   connectSocket()
-  interpolate()
+  // Don't start interpolate() yet — wait until initialized
 })
+
+watch(initialized, (ready) => {
+  if (ready) interpolate()
+})
+
 </script>
+
+<template>
+  <div class="game-wrapper">
+    <div v-if="loading" class="loading-overlay">
+      <h1>Loading PowerMatch...</h1>
+    </div>
+
+    <div v-else>
+      <div class="info-bar">
+        <div>⏱ {{ timeLeft }}s</div>
+        <h1>PowerMatch</h1>
+        <div>⭐ {{ roundedScore }}</div>
+      </div>
+
+      <div class="chart-container">
+        <LineChart
+          v-if="chartReady && chartData.labels.length > 0"
+          :data="chartData"
+          :options="chartOptions"
+        />
+      </div>
+    </div>
+  </div>
+</template>
 
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');

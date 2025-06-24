@@ -13,32 +13,45 @@ class GameEngine:
         self.input_queue = input_source or input_queue
 
     def generate_curve(self):
+        import random
         random.seed(self.seed)
         curve = []
-        current = random.uniform(30, 100)
 
-        for i in range(30):
-            if self.difficulty == "Easy":
-                step_duration = random.randint(3, 5)
-                delta = random.uniform(-10, 10)
-            elif self.difficulty == "Medium":
-                step_duration = random.randint(2, 4)
-                delta = random.uniform(-20, 20)
-            else:  # Hard
-                step_duration = random.randint(1, 3)
-                delta = random.uniform(-40, 40)
+        # Wattage zones
+        low = lambda: random.uniform(10, 30)
+        mid = lambda: random.uniform(45, 90)
+        high = lambda: random.uniform(100, 135)
+        zones = [low, mid, high]
 
-            if i % step_duration == 0:
-                current += delta
+        i = 0
+        prev_zone = None
 
-            current = max(10, min(135, current))
-            curve.append(round(current, 1))
+        while i < 30:
+            duration = random.randint(2, 4)
+            duration = min(duration, 30 - i)  # Don't overflow
 
-        # Force low + high coverage
-        curve[random.randint(0, 5)] = round(random.uniform(10, 20), 1)
-        curve[random.randint(24, 29)] = round(random.uniform(120, 135), 1)
+            next_zone = random.choice([z for z in zones if z != prev_zone])
+            prev_zone = next_zone
+            value = round(next_zone(), 1)
 
+            curve.extend([value] * duration)
+            i += duration
+
+        # Pad to exactly 30 ticks if undershot
+        while len(curve) < 30:
+            curve.append(curve[-1])
+
+        # Force low and high values at least once
+        curve[random.randint(0, 5)] = round(low(), 1)
+        curve[random.randint(24, 29)] = round(high(), 1)
+
+        print(f"Generated curve: {curve} with seed {self.seed}")
+        print(f"Curve length: {len(curve)} → {curve}")
         return curve
+
+
+
+
 
     def generate_tolerance(self):
         if self.difficulty == "Easy":
