@@ -7,8 +7,8 @@ input_queue = asyncio.Queue()
 
 class MQTTInputHandler:
     def __init__(self, loop: asyncio.AbstractEventLoop):
-        self.broker = "powerbuddy.duckdns.org"
-        self.topic = "/eniwa/energy/device/7CDFA1562F64/status/evt"
+        self.broker = "raspberrypi.local"  # Change to correct MQTT broker address
+        self.topic = "/eniwa/energy/device/1091A8AB9138/status/evt" # Change to correct MQTT topic
         self.client = mqtt.Client()
         self.loop = loop  # store loop explicitly
 
@@ -17,13 +17,15 @@ class MQTTInputHandler:
         self.client.on_message = self._on_message
         self.client.connect(self.broker, 1883, 60)
         self.client.loop_start()
-        print(f"🔌 MQTT connecting to {self.broker} and subscribing to {self.topic}")
+        print(f"MQTT connecting to {self.broker} and subscribing to {self.topic}")
 
     def _on_connect(self, client, userdata, flags, rc):
         print("✅ MQTT connected")
         client.subscribe(self.topic)
 
     def _on_message(self, client, userdata, msg):
+        #print(f"[MQTT] Received message on topic {msg.topic}: {msg.payload.decode()}") debugging
+
         try:
             payload = json.loads(msg.payload.decode())
             reader_data = payload.get("reader_data", [])

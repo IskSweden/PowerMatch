@@ -15,6 +15,7 @@ class GameRunner:
         engine = GameEngine(name=self.name, difficulty=self.difficulty)
         target, tolerance = engine.get_curve_preview()
         start_time = datetime.now(timezone.utc).timestamp()
+        print("[WS] Sending INIT to frontend")
 
         await self.websocket.send_json({
             "type": "init",
@@ -25,6 +26,7 @@ class GameRunner:
             "duration": len(target),
             "start_time": start_time
         })
+        print("[WS] Started game loop")
 
         async for tick in engine.run():
             await asyncio.sleep(1)
