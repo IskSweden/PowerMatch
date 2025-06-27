@@ -61,7 +61,12 @@ class GameEngine:
         else:  # Hard
             return [6 for _ in range(30)]
 
+        
+
     def get_curve_preview(self):
+
+        print(f"Generated tolerance: {self.tolerance_curve} for difficulty {self.difficulty}")
+
         return self.target_curve, self.tolerance_curve
 
     def compute_tick_score(self, actual, target, tolerance):

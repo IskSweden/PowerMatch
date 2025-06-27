@@ -23,7 +23,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
 import {
@@ -32,98 +32,191 @@ import {
 } from 'chart.js'
 import annotationPlugin from 'chartjs-plugin-annotation'
 
+// Register Chart.js components
 ChartJS.register(LineElement, PointElement, LinearScale, Title, CategoryScale, Filler, Tooltip, Legend, annotationPlugin)
 const LineChart = Line
 
+// Game State & Data
 const route = useRoute()
 const router = useRouter()
 const name = route.query.name || 'Player'
 const difficulty = route.query.difficulty || 'Medium'
 
 const targetCurve = ref([])
-const actualValues = ref(Array(30).fill(null))
-const interpolatedActual = ref([])
+const actualValues = ref(Array(30 * 60).fill(null)) // Store actual inputs at FPS resolution
+const lastActual = ref(0)
 const tolerance = 10
 const score = ref(0)
-const lastActual = ref(0)
 
 const gameState = ref('loading')
 const countdown = ref(3)
 const startTime = ref(null)
 const elapsed = ref(0)
 const timeLeft = computed(() => Math.max(0, 30 - elapsed.value))
-const chartRef = ref(null)
 
+const chartRef = ref(null)
 const fps = 60
 let animationFrameId = null
-let frameSkip = 0
 
-const inputX = computed(() => elapsed.value < 3 ? elapsed.value : elapsed.value < 20 ? xMin.value + 3 : elapsed.value);
+const chartWindowDuration = 10; // seconds the chart window spans
+const inputMarkerOffset = 3; // seconds from left edge where input marker usually sits
+const GAME_TOTAL_DURATION = 30; // total duration of the game in seconds
 
+// --- X-Axis Scrolling Logic ---
+const xMin = computed(() => {
+  const scrollFreezePoint = GAME_TOTAL_DURATION - chartWindowDuration;
+  const currentDynamicXMin = elapsed.value - inputMarkerOffset;
+  // Cap xMin at 0 and at the scroll freeze point
+  return Math.max(0, Math.min(currentDynamicXMin, scrollFreezePoint));
+});
+
+const xMax = computed(() => xMin.value + chartWindowDuration);
+
+// --- Input Marker Position Logic ---
+const inputX = computed(() => {
+  // Time point when the chart stops scrolling and marker starts absolute movement
+  const markerStartsAbsoluteMovementAt = GAME_TOTAL_DURATION - chartWindowDuration + inputMarkerOffset;
+
+  if (elapsed.value < inputMarkerOffset) {
+    // Initial ramp-up: marker follows elapsed time until it reaches the offset
+    return elapsed.value;
+  } else if (elapsed.value < markerStartsAbsoluteMovementAt) {
+    // Scrolling phase: marker stays fixed relative to the window (at inputMarkerOffset from xMin)
+    return xMin.value + inputMarkerOffset;
+  } else {
+    // Frozen phase: marker tracks elapsed.value directly to move into the goal
+    return elapsed.value;
+  }
+});
+
+
+// Function to generate dense, stepped {x,y} points for a curve
+function getSteppedCurveWithXY(arr, durationSeconds, framesPerSecond) {
+  const result = [];
+  const totalFrames = durationSeconds * framesPerSecond;
+
+  for (let i = 0; i < totalFrames; i++) {
+    // Determine which original targetCurve index this frame corresponds to
+    // Use Math.min to ensure we don't go out of bounds if i/framesPerSecond exceeds arr.length
+    const targetCurveIndex = Math.min(Math.floor(i / framesPerSecond), arr.length - 1);
+    const yVal = arr[targetCurveIndex];
+    const x = i / framesPerSecond; // Current time in seconds
+
+    if (typeof yVal === 'number' && !isNaN(yVal)) {
+      result.push({ x: parseFloat(x.toFixed(2)), y: parseFloat(yVal.toFixed(2)) });
+    }
+  }
+  // Ensure the very last point is precisely at GAME_TOTAL_DURATION with its corresponding value
+  const lastX = parseFloat(GAME_TOTAL_DURATION.toFixed(2));
+  const lastY = arr[arr.length - 1]; // Last value from the original targetCurve
+  if (typeof lastY === 'number' && !isNaN(lastY)) {
+      // Add the final point if it's not already there or to ensure its Y value is correct
+      if (result.length === 0 || result[result.length - 1].x !== lastX) {
+          result.push({ x: lastX, y: parseFloat(lastY.toFixed(2)) });
+      } else {
+          result[result.length - 1].y = parseFloat(lastY.toFixed(2));
+      }
+  }
+  return result;
+}
+
+const fullSteppedTargetXY = ref([]); // Stores the pre-calculated full target curve
+
+// --- Chart Data Definition ---
 const chartData = computed(() => {
-  const labels = Array.from({ length: fps * 10 }, (_, i) => (xMin.value + i / fps).toFixed(2))
+  // Filter target curve points for the visible window
+  const visibleTargetXY = fullSteppedTargetXY.value.filter(point =>
+    point.x >= xMin.value && point.x <= xMax.value
+  );
 
-  const steppedTargetFull = getSteppedCurve(targetCurve.value)
-  const steppedTarget = steppedTargetFull
+  // Calculate tolerance lines for the visible window
+  const toleranceUpper = visibleTargetXY.map(p => ({ x: p.x, y: p.y != null ? Math.min(p.y + tolerance, 135) : null }));
+  const toleranceLower = visibleTargetXY.map(p => ({ x: p.x, y: p.y != null ? Math.max(p.y - tolerance, 0) : null }));
 
-  const toleranceUpper = steppedTarget.map(v => v != null ? Math.min(v + tolerance, 135) : null)
-  const toleranceLower = steppedTarget.map(v => v != null ? Math.max(v - tolerance, 0) : null)
+  // Filter actual input values for the visible window
+  const visibleActualXY = [];
+  const startIdx = Math.floor(xMin.value * fps);
+  const endIdx = Math.floor(xMax.value * fps);
 
-  const visibleActual = interpolatedActual.value.map((val, i) => {
-    const time = i / fps
-    return time <= elapsed.value ? val : null
-  })
-  const steppedActual = visibleActual
+  for (let i = startIdx; i < endIdx; i++) {
+    const y = actualValues.value[i];
+    if (typeof y === 'number' && !isNaN(y)) {
+      const x = i / fps;
+      visibleActualXY.push({ x: parseFloat(x.toFixed(2)), y: parseFloat(y.toFixed(2)) });
+    }
+  }
+
   return {
-    labels,
+    labels: [], // Not used with linear scales and x,y data
     datasets: [
+      // Dataset for the lower boundary of the tolerance band
+      // It must have an ID to be targeted by the fill property of the upper band.
+      // Its line is transparent, but its data is crucial for the fill area.
       {
-        label: 'Input',
-        data: steppedActual,
-        borderColor: 'limegreen',
-        borderWidth: 3,
-        tension: 0,
+        id: 'toleranceLowerLine', // Unique ID for targeting
+        data: toleranceLower,
+        borderColor: 'transparent', // Make the line invisible
+        borderWidth: 0,
         pointRadius: 0,
-        stepped: false,
-        fill: false
+        fill: false, // This dataset itself does not fill
+        stepped: 'before', // Crucial for correct stepped rendering
+        tension: 0,
+        order: 3, // Draw this furthest back
       },
+      // Dataset for the upper boundary of the tolerance band
+      // This is the dataset that will perform the fill down to the 'toleranceLowerLine'.
+      {
+        label: 'Tolerance', // This label will appear in the legend
+        data: toleranceUpper,
+        backgroundColor: 'rgba(255, 200, 0, 0.2)', // Fill color
+        borderColor: 'transparent', // No line for the upper boundary itself (just the fill)
+        borderWidth: 0,
+        pointRadius: 0,
+        fill: {
+            target: 'toleranceLowerLine', // Fill down to the dataset with this ID
+            above: 'rgba(255, 200, 0, 0.2)', // Ensure color is applied consistently
+            below: 'rgba(255, 200, 0, 0.2)'
+        },
+        stepped: 'before', // Crucial for correct stepped rendering of the fill
+        tension: 0,
+        order: 2, // Drawn in front of toleranceLowerLine, but behind Target and Input
+      },
+      // Target Line
       {
         label: 'Target',
-        data: steppedTarget.slice(startIndex.value, endIndex.value),
+        data: visibleTargetXY,
         borderColor: 'orange',
         borderDash: [4, 4],
         borderWidth: 2,
         pointRadius: 0,
-        stepped: true,
-        fill: false
+        fill: false,
+        stepped: 'before',
+        tension: 0,
+        order: 1, // Drawn in front of the tolerance fill
       },
+      // Input Line
       {
-        data: toleranceUpper.slice(startIndex.value, endIndex.value),
-        backgroundColor: 'rgba(255, 200, 0, 0.2)',
-        stepped: true,
-        borderWidth: 0,
-        fill: '-1'
-      },
-      {
-        data: toleranceLower.slice(startIndex.value, endIndex.value),
-        backgroundColor: 'rgba(255, 200, 0, 0.2)',
-        stepped: true,
-        borderWidth: 0,
-        fill: '-1'
+        label: 'Input',
+        data: visibleActualXY,
+        borderColor: 'limegreen',
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: false,
+        tension: 0.1, // Keep smooth for user input
+        order: 0, // Drawn on top of everything else
       }
     ]
   }
 })
 
-const xMin = computed(() => elapsed.value < 3 ? 0 : elapsed.value < 20 ? elapsed.value - 3 : 20)
-const xMax = computed(() => xMin.value + 10)
-const startIndex = computed(() => Math.floor(xMin.value * fps))
-const endIndex = computed(() => Math.ceil(xMax.value * fps))
-
+// --- Chart Options ---
 const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
-  animation: false,
+  animation: {
+    duration: 0 // Disable animation for real-time updates
+  },
+  parsing: false, // Required when providing {x,y} data directly
   scales: {
     y: {
       min: 0,
@@ -134,9 +227,18 @@ const chartOptions = computed(() => ({
     x: {
       min: xMin.value,
       max: xMax.value,
+      type: 'linear', // Use linear scale for continuous time
       ticks: {
         color: 'black',
-        callback: val => `${Math.floor(val)}s`
+        callback: function(value, index, ticks) {
+            // Display whole seconds
+            const step = 1;
+            if (value % step === 0) {
+              return `${Math.floor(value)}s`;
+            }
+            return null;
+        },
+        maxTicksLimit: chartWindowDuration + 1, // Control number of visible ticks
       },
       grid: { color: 'rgba(0,0,0,0.05)' }
     }
@@ -145,7 +247,8 @@ const chartOptions = computed(() => ({
     legend: {
       labels: {
         color: 'black',
-        filter: item => ['Input', 'Target'].includes(item.text)
+        // Filter out the 'toleranceLowerLine' from the legend as it's just a boundary
+        filter: item => ['Input', 'Target', 'Tolerance'].includes(item.text)
       }
     },
     annotation: {
@@ -153,7 +256,7 @@ const chartOptions = computed(() => ({
         inputMarker: {
           type: 'line',
           xMin: inputX.value,
-      xMax: inputX.value + 0.001,
+          xMax: inputX.value + 0.001, // A very thin line
           borderColor: 'rgb(0, 54, 69)',
           borderDash: [4, 4],
           borderWidth: 2,
@@ -171,85 +274,123 @@ const chartOptions = computed(() => ({
   }
 }))
 
-
-
-function getSteppedCurve(arr) {
-  return arr.flatMap(val => Array(fps).fill(val ?? null))
-}
-
-function interpolateActuals(rawValues) {
-  const result = []
-  for (let i = 0; i < 29; i++) {
-    const v1 = rawValues[i]
-    const v2 = rawValues[i + 1] ?? v1
-    for (let j = 0; j < fps; j++) {
-      result.push(v1 !== null && v2 !== null ? v1 + (v2 - v1) * (j / fps) : v1)
-    }
-  }
-  const last = rawValues[29] ?? rawValues.findLast(v => v !== null) ?? 0
-  result.push(...Array(fps).fill(last))
-  return result
-}
-
-function connectWebSocket() {
-  const socket = new WebSocket(import.meta.env.DEV ? 'ws://localhost:8000/ws/game' : `ws://${location.host}/ws/game`)
-  socket.onopen = () => socket.send(JSON.stringify({ name, difficulty }))
-
-  socket.onmessage = event => {
-    const data = JSON.parse(event.data)
-    if (data.type === 'init') {
-      targetCurve.value = data.targetCurve
-      gameState.value = 'countdown'
-      const countdownTimer = setInterval(() => {
-        countdown.value--
-        if (countdown.value <= 0) {
-          clearInterval(countdownTimer)
-          startTime.value = performance.now()
-          gameState.value = 'playing'
-          runGameLoop()
-        }
-      }, 1000)
-    }
-    if (data.type === 'tick') {
-      if (typeof data.actual === 'number') lastActual.value = data.actual
-      if (typeof data.totalScore === 'number') score.value = data.totalScore
-    }
-  }
-}
-
+// --- Game Loop ---
 function runGameLoop() {
   function loop() {
     if (gameState.value !== 'playing') return
+
     elapsed.value = (performance.now() - startTime.value) / 1000
 
-    const t = Math.floor(elapsed.value)
-    if (t < 30) actualValues.value[t] = lastActual.value
+    const currentFrameIndex = Math.floor(elapsed.value * fps);
+    if (currentFrameIndex < actualValues.value.length) {
+      actualValues.value[currentFrameIndex] = lastActual.value;
 
-    interpolatedActual.value = interpolateActuals(actualValues.value)
+      // Simple linear interpolation to fill gaps in actualValues for smooth rendering
+      if (currentFrameIndex > 0) {
+          let prevNonNullIndex = currentFrameIndex - 1;
+          while (prevNonNullIndex >= 0 && actualValues.value[prevNonNullIndex] === null) {
+              prevNonNullIndex--;
+          }
+          if (prevNonNullIndex >= 0 && actualValues.value[currentFrameIndex] !== null) {
+            const startValue = actualValues.value[prevNonNullIndex];
+            const endValue = actualValues.value[currentFrameIndex];
+            for (let i = prevNonNullIndex + 1; i < currentFrameIndex; i++) {
+                const fraction = (i - prevNonNullIndex) / (currentFrameIndex - prevNonNullIndex);
+                actualValues.value[i] = startValue + (endValue - startValue) * fraction;
+            }
+          }
+      }
+    }
 
-    if (++frameSkip % 3 === 0 && chartRef.value?.chart) chartRef.value.chart.update('none')
+    // Request chart update
+    if (chartRef.value?.chart) {
+      chartRef.value.chart.update('none'); // 'none' for no animation
+    }
 
-    if (elapsed.value >= 30) {
+    // Game end condition
+    if (elapsed.value >= GAME_TOTAL_DURATION) {
       gameState.value = 'ended'
       cancelAnimationFrame(animationFrameId)
       router.push({ path: '/end', query: { score: score.value, name, difficulty } })
       return
     }
+
     animationFrameId = requestAnimationFrame(loop)
   }
+
   requestAnimationFrame(loop)
 }
 
+// --- WebSocket Setup ---
+function connectWebSocket() {
+  // Determine WebSocket URL based on development or production environment
+  const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsHost = import.meta.env.DEV ? 'localhost:8000' : location.host;
+  const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/game`);
+
+  socket.onopen = () => socket.send(JSON.stringify({ name, difficulty }));
+
+  socket.onmessage = event => {
+    const data = JSON.parse(event.data);
+    if (data.type === 'init') {
+      targetCurve.value = data.targetCurve;
+      // Pre-calculate full stepped target curve once on init
+      fullSteppedTargetXY.value = getSteppedCurveWithXY(targetCurve.value, GAME_TOTAL_DURATION, fps);
+
+      gameState.value = 'countdown';
+      const countdownTimer = setInterval(() => {
+        countdown.value--;
+        if (countdown.value <= 0) {
+          clearInterval(countdownTimer);
+          startTime.value = performance.now();
+          gameState.value = 'playing';
+          runGameLoop();
+        }
+      }, 1000);
+    }
+    if (data.type === 'tick') {
+      if (typeof data.actual === 'number') lastActual.value = data.actual;
+      if (typeof data.totalScore === 'number') score.value = data.totalScore;
+    }
+  };
+
+  socket.onerror = (error) => {
+    console.error("WebSocket Error:", error);
+    // TODO: User feedback for connection errors
+  };
+
+  socket.onclose = (event) => {
+    console.warn("WebSocket Closed:", event);
+    // TODO: User feedback for disconnected state
+  };
+}
+
 onMounted(() => {
-  connectWebSocket()
-})
+  connectWebSocket();
+});
+
+// Watch elapsed time to trigger chart updates
+watch(elapsed, () => {
+    if (gameState.value === 'playing' && chartRef.value?.chart) {
+        chartRef.value.chart.update('none');
+    }
+});
 </script>
 
 <style scoped>
+/* Scoped styles for the component */
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
 
-* { font-family: 'Poppins', sans-serif; box-sizing: border-box; }
-body { margin: 0; background: rgb(0, 117, 130); }
+* {
+  font-family: 'Poppins', sans-serif;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: rgb(0, 117, 130);
+}
+
 .game-wrapper {
   display: flex;
   flex-direction: column;
@@ -258,6 +399,7 @@ body { margin: 0; background: rgb(0, 117, 130); }
   color: white;
   padding: 1rem;
 }
+
 .info-bar {
   display: flex;
   justify-content: space-between;
@@ -268,10 +410,12 @@ body { margin: 0; background: rgb(0, 117, 130); }
   border-radius: 0.5rem;
   margin-bottom: 1rem;
 }
+
 .info-bar h1 {
   margin: 0;
   font-size: 1.5rem;
 }
+
 .chart-container {
   flex-grow: 1;
   width: 100%;
@@ -281,6 +425,7 @@ body { margin: 0; background: rgb(0, 117, 130); }
   border-radius: 1rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
+
 .loading-overlay {
   position: fixed;
   inset: 0;
