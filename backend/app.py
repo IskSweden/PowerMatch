@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect # <--- ADDED WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
@@ -11,11 +11,16 @@ from fastapi.responses import FileResponse
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("Application startup: Initializing database...") # Debug print
     init_db()
+    print("Database initialized.") # Debug print
     loop = asyncio.get_event_loop()
     mqtt = MQTTInputHandler(loop)
     mqtt.start()
+    print("MQTT handler started.") # Debug print
     yield
+    # You might want to add mqtt.stop() here if your MQTTInputHandler has one
+    print("Application shutdown complete.") # Debug print
 
 def create_app():
     app = FastAPI(lifespan=lifespan)
@@ -25,7 +30,7 @@ def create_app():
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=["*"], # Your original setting, kept as requested
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -36,6 +41,23 @@ def create_app():
 
     # ✅ Mount only static /assets
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    # --- START: Debugging WebSocket Endpoint Addition ---
+    # This is a temporary endpoint to test general WebSocket connectivity.
+    @app.websocket("/ws_test")
+    async def websocket_test(websocket: WebSocket):
+        print("[DEBUG] /ws_test connected!") # Server-side debug print
+        await websocket.accept()
+        try:
+            while True:
+                data = await websocket.receive_text()
+                print(f"[DEBUG] Received on /ws_test: {data}") # Server-side debug print
+                await websocket.send_text(f"Echo from /ws_test: {data}")
+        except WebSocketDisconnect: # Catch a normal disconnect
+            print("[DEBUG] /ws_test disconnected.") # Server-side debug print
+        except Exception as e: # Catch any other errors
+            print(f"[DEBUG] /ws_test error: {e}") # Server-side debug print
+    # --- END: Debugging WebSocket Endpoint Addition ---
 
     # ✅ Catch all unmatched routes and serve index.html manually
     @app.get("/{path_name:path}")

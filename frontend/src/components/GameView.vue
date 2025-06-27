@@ -10,7 +10,7 @@
 
     <div v-else>
       <div class="info-bar">
-        <div>⏱ {{ Math.ceil(timeLeft) }}s</div>
+        <div>⏱ {{ Math.max(0, (gameTotalTicks - initialBackendTickOffset) - Math.floor(visualCurrentTick) - 1) }}s</div>
         <h1>PowerMatch</h1>
         <div>⭐ {{ score.toFixed(1) }}</div>
       </div>
@@ -32,85 +32,93 @@ import {
 } from 'chart.js'
 import annotationPlugin from 'chartjs-plugin-annotation'
 
-// Register Chart.js components
 ChartJS.register(LineElement, PointElement, LinearScale, Title, CategoryScale, Filler, Tooltip, Legend, annotationPlugin)
 const LineChart = Line
 
-// Game State & Data
 const route = useRoute()
 const router = useRouter()
-const name = route.query.name || 'Player'
-const difficulty = route.query.difficulty || 'Medium'
+const name = ref(route.query.name || 'Player')
+const difficulty = ref(route.query.difficulty || 'Medium')
 
 const targetCurve = ref([])
-const actualValues = ref(Array(30 * 60).fill(null)) // Store actual inputs at FPS resolution
+// actualValues now stores { x: rawBackendTickNumber, y: actualValue } *temporarily*
+// These will be offset-corrected when moved to `processedActualValues`
+const rawActualBuffer = ref([]);
+const processedActualValues = ref([]); // Stores { x: offsetCorrectedClientTick, y: actualValue } for charting
 const lastActual = ref(0)
 const tolerance = 10
 const score = ref(0)
 
 const gameState = ref('loading')
 const countdown = ref(3)
-const startTime = ref(null)
-const elapsed = ref(0)
-const timeLeft = computed(() => Math.max(0, 30 - elapsed.value))
+
+const gameTotalTicks = ref(30); // Total ticks from backend (raw, e.g., 30)
 
 const chartRef = ref(null)
 const fps = 60
 let animationFrameId = null
 
-const chartWindowDuration = 10; // seconds the chart window spans
-const inputMarkerOffset = 3; // seconds from left edge where input marker usually sits
-const GAME_TOTAL_DURATION = 30; // total duration of the game in seconds
+const chartWindowDuration = 10;
+const inputMarkerOffset = 3;
 
-// --- X-Axis Scrolling Logic ---
+// To correct for backend ticks starting > 0
+const initialBackendTickOffset = ref(0); // This will hold the raw backend tick number that corresponds to client's 0s
+
+// For smooth interpolation of visual time
+let lastTickReceivedTime = performance.now(); // Timestamp when last backend tick was received
+let currentBackendTickValueAtLastMessage = -1; // Value of currentBackendTick (raw backend tick number) when the last message was received
+
+// This will be the smoothly interpolated tick for visual purposes, always 0-based
+const visualCurrentTick = ref(-1);
+
 const xMin = computed(() => {
-  const scrollFreezePoint = GAME_TOTAL_DURATION - chartWindowDuration;
-  const currentDynamicXMin = elapsed.value - inputMarkerOffset;
-  // Cap xMin at 0 and at the scroll freeze point
-  return Math.max(0, Math.min(currentDynamicXMin, scrollFreezePoint));
+  const effectiveGameDuration = gameTotalTicks.value - initialBackendTickOffset.value;
+  const scrollFreezePoint = Math.max(0, effectiveGameDuration - chartWindowDuration);
+
+  const currentDynamicXMin = visualCurrentTick.value - inputMarkerOffset;
+  const calculatedXMin = Math.max(0, Math.min(currentDynamicXMin, scrollFreezePoint));
+  return calculatedXMin;
 });
 
-const xMax = computed(() => xMin.value + chartWindowDuration);
+const xMax = computed(() => {
+  const newXMax = xMin.value + chartWindowDuration;
+  const effectiveGameDuration = gameTotalTicks.value - initialBackendTickOffset.value;
+  return Math.min(newXMax, effectiveGameDuration);
+});
 
-// --- Input Marker Position Logic ---
 const inputX = computed(() => {
-  // Time point when the chart stops scrolling and marker starts absolute movement
-  const markerStartsAbsoluteMovementAt = GAME_TOTAL_DURATION - chartWindowDuration + inputMarkerOffset;
+  const effectiveGameDuration = gameTotalTicks.value - initialBackendTickOffset.value;
+  const markerStartsAbsoluteMovementAt = effectiveGameDuration - chartWindowDuration + inputMarkerOffset;
 
-  if (elapsed.value < inputMarkerOffset) {
-    // Initial ramp-up: marker follows elapsed time until it reaches the offset
-    return elapsed.value;
-  } else if (elapsed.value < markerStartsAbsoluteMovementAt) {
-    // Scrolling phase: marker stays fixed relative to the window (at inputMarkerOffset from xMin)
-    return xMin.value + inputMarkerOffset;
+  let calculatedInputX;
+
+  if (visualCurrentTick.value < inputMarkerOffset) {
+    calculatedInputX = visualCurrentTick.value;
+  } else if (visualCurrentTick.value < markerStartsAbsoluteMovementAt) {
+    calculatedInputX = xMin.value + inputMarkerOffset;
   } else {
-    // Frozen phase: marker tracks elapsed.value directly to move into the goal
-    return elapsed.value;
+    calculatedInputX = visualCurrentTick.value;
   }
+  return calculatedInputX;
 });
 
 
-// Function to generate dense, stepped {x,y} points for a curve
 function getSteppedCurveWithXY(arr, durationSeconds, framesPerSecond) {
   const result = [];
   const totalFrames = durationSeconds * framesPerSecond;
 
   for (let i = 0; i < totalFrames; i++) {
-    // Determine which original targetCurve index this frame corresponds to
-    // Use Math.min to ensure we don't go out of bounds if i/framesPerSecond exceeds arr.length
     const targetCurveIndex = Math.min(Math.floor(i / framesPerSecond), arr.length - 1);
     const yVal = arr[targetCurveIndex];
-    const x = i / framesPerSecond; // Current time in seconds
+    const x = i / framesPerSecond;
 
     if (typeof yVal === 'number' && !isNaN(yVal)) {
       result.push({ x: parseFloat(x.toFixed(2)), y: parseFloat(yVal.toFixed(2)) });
     }
   }
-  // Ensure the very last point is precisely at GAME_TOTAL_DURATION with its corresponding value
-  const lastX = parseFloat(GAME_TOTAL_DURATION.toFixed(2));
-  const lastY = arr[arr.length - 1]; // Last value from the original targetCurve
+  const lastX = parseFloat(durationSeconds.toFixed(2));
+  const lastY = arr[arr.length - 1];
   if (typeof lastY === 'number' && !isNaN(lastY)) {
-      // Add the final point if it's not already there or to ensure its Y value is correct
       if (result.length === 0 || result[result.length - 1].x !== lastX) {
           result.push({ x: lastX, y: parseFloat(lastY.toFixed(2)) });
       } else {
@@ -120,69 +128,159 @@ function getSteppedCurveWithXY(arr, durationSeconds, framesPerSecond) {
   return result;
 }
 
-const fullSteppedTargetXY = ref([]); // Stores the pre-calculated full target curve
+const fullSteppedTargetXY = ref([]);
 
-// --- Chart Data Definition ---
+
+const tolerancePlugin = {
+  id: 'toleranceFill',
+  beforeDatasetsDraw(chart, args, options) {
+    const { ctx, chartArea: { left, right, top, bottom }, scales: { x, y } } = chart;
+
+    const targetDataset = chart.data.datasets.find(ds => ds.id === 'targetLineId');
+    if (!targetDataset || !targetDataset.data || targetDataset.data.length < 1) {
+      return;
+    }
+
+    ctx.save();
+    ctx.fillStyle = options.backgroundColor || 'rgba(255, 200, 0, 0.2)';
+    const toleranceValue = options.toleranceValue;
+
+    const targetData = targetDataset.data;
+
+    const upperBoundPoints = [];
+    targetData.forEach((p, i) => {
+        const prevY = i > 0 ? targetData[i-1].y : p.y;
+        upperBoundPoints.push({ x: p.x, y: Math.min(prevY + toleranceValue, y.max) });
+        if (prevY !== p.y) {
+            upperBoundPoints.push({ x: p.x, y: Math.min(p.y + toleranceValue, y.max) });
+        }
+    });
+    upperBoundPoints.sort((a,b) => a.x - b.x);
+
+    const lowerBoundPoints = [];
+    for (let i = targetData.length - 1; i >= 0; i--) {
+        const p = targetData[i];
+        const prevY = i > 0 ? targetData[i-1].y : p.y;
+        if (prevY !== p.y) {
+            lowerBoundPoints.push({ x: p.x, y: Math.max(p.y - toleranceValue, y.min) });
+        }
+        lowerBoundPoints.push({ x: p.x, y: Math.max(prevY - toleranceValue, y.min) });
+    }
+    lowerBoundPoints.sort((a,b) => a.x - b.x);
+
+    ctx.beginPath();
+    if (upperBoundPoints.length > 0) {
+        ctx.moveTo(x.getPixelForValue(upperBoundPoints[0].x), y.getPixelForValue(upperBoundPoints[0].y));
+    }
+    upperBoundPoints.forEach(p => {
+        ctx.lineTo(x.getPixelForValue(p.x), y.getPixelForValue(p.y));
+    });
+    for(let i = lowerBoundPoints.length - 1; i >= 0; i--){
+        const p = lowerBoundPoints[i];
+        ctx.lineTo(x.getPixelForValue(p.x), y.getPixelForValue(p.y));
+    }
+
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+};
+
+ChartJS.register(tolerancePlugin);
+
+
 const chartData = computed(() => {
-  // Filter target curve points for the visible window
-  const visibleTargetXY = fullSteppedTargetXY.value.filter(point =>
-    point.x >= xMin.value && point.x <= xMax.value
+  // --- Target Line (Preloading - FULL 10s window) ---
+  const filteredTarget = fullSteppedTargetXY.value.filter(point =>
+    point.x >= xMin.value + initialBackendTickOffset.value && point.x <= xMax.value + initialBackendTickOffset.value
   );
 
-  // Calculate tolerance lines for the visible window
-  const toleranceUpper = visibleTargetXY.map(p => ({ x: p.x, y: p.y != null ? Math.min(p.y + tolerance, 135) : null }));
-  const toleranceLower = visibleTargetXY.map(p => ({ x: p.x, y: p.y != null ? Math.max(p.y - tolerance, 0) : null }));
+  let visibleTargetXY = [];
 
-  // Filter actual input values for the visible window
-  const visibleActualXY = [];
-  const startIdx = Math.floor(xMin.value * fps);
-  const endIdx = Math.floor(xMax.value * fps);
+  if (filteredTarget.length > 0 && filteredTarget[0].x > xMin.value + initialBackendTickOffset.value) {
+    const precedingPoint = fullSteppedTargetXY.value.slice().reverse().find(p => p.x < xMin.value + initialBackendTickOffset.value);
+    if (precedingPoint) {
+      visibleTargetXY.push({ x: xMin.value + initialBackendTickOffset.value, y: precedingPoint.y });
+    } else {
+      visibleTargetXY.push({ x: xMin.value + initialBackendTickOffset.value, y: filteredTarget[0].y });
+    }
+  }
+  visibleTargetXY.push(...filteredTarget);
 
-  for (let i = startIdx; i < endIdx; i++) {
-    const y = actualValues.value[i];
-    if (typeof y === 'number' && !isNaN(y)) {
-      const x = i / fps;
-      visibleActualXY.push({ x: parseFloat(x.toFixed(2)), y: parseFloat(y.toFixed(2)) });
+  if (visibleTargetXY.length > 0 && visibleTargetXY[visibleTargetXY.length - 1].x < xMax.value + initialBackendTickOffset.value) {
+    const succeedingPoint = fullSteppedTargetXY.value.find(p => p.x > xMax.value + initialBackendTickOffset.value);
+    if (succeedingPoint) {
+      visibleTargetXY.push({ x: xMax.value + initialBackendTickOffset.value, y: succeedingPoint.y });
+    } else {
+      visibleTargetXY.push({ x: xMax.value + initialBackendTickOffset.value, y: visibleTargetXY[visibleTargetXY.length - 1].y });
     }
   }
 
+  // Offset-correct the X values for the chart display (this creates the 0-based time on chart)
+  visibleTargetXY = visibleTargetXY.map(p => ({ x: p.x - initialBackendTickOffset.value, y: p.y }));
+
+  const seenTargetX = new Set();
+  visibleTargetXY = visibleTargetXY.filter(point => {
+    const fixedX = point.x.toFixed(5);
+    if (seenTargetX.has(fixedX)) {
+      return false;
+    }
+    seenTargetX.add(fixedX);
+    return true;
+  }).sort((a, b) => a.x - b.x);
+
+
+  // --- Input Line (Building from processedActualValues) ---
+  let visibleActualXY = [];
+
+  // Filter processedActualValues based on the current chart window and visualCurrentTick
+  const relevantProcessedPoints = processedActualValues.value.filter(point =>
+    point.x >= xMin.value && point.x <= visualCurrentTick.value
+  ).sort((a, b) => a.x - b.x);
+
+  // Add the point at xMin if necessary, using the value from the last known actual point *before* xMin
+  if (relevantProcessedPoints.length > 0 && relevantProcessedPoints[0].x > xMin.value) {
+      // Find the last processed actual point that occurred BEFORE xMin (or at xMin)
+      const precedingPointForXMin = processedActualValues.value.slice().reverse().find(p => p.x <= xMin.value);
+      if (precedingPointForXMin) {
+          visibleActualXY.push({ x: xMin.value, y: precedingPointForXMin.y });
+      } else if (typeof lastActual.value === 'number') {
+          // Fallback if no historical points, use the current interpolated value
+          visibleActualXY.push({ x: xMin.value, y: lastActual.value });
+      }
+  } else if (relevantProcessedPoints.length === 0 && gameState.value === 'playing' && typeof lastActual.value === 'number' && visualCurrentTick.value >= 0) {
+      // If no processed points in view yet, but playing, draw flat line from xMin using current value
+      visibleActualXY.push({ x: xMin.value, y: lastActual.value });
+  }
+
+  // Add all filtered backend points
+  visibleActualXY.push(...relevantProcessedPoints);
+
+  // Add the current interpolated visual position point LAST. This is the "tip" of the input line.
+  if (gameState.value === 'playing' && typeof lastActual.value === 'number' && visualCurrentTick.value >= 0) {
+    const currentVisualPoint = { x: visualCurrentTick.value, y: lastActual.value };
+    const existingIndex = visibleActualXY.findIndex(p => Math.abs(p.x - currentVisualPoint.x) < 0.0001);
+    if (existingIndex !== -1) {
+        // Update existing point to be precisely the interpolated point
+        visibleActualXY[existingIndex] = currentVisualPoint;
+    } else {
+        visibleActualXY.push(currentVisualPoint);
+    }
+  }
+
+  // Final Deduplication and Sorting for input line
+  const tempMap = new Map();
+  for (const point of visibleActualXY) {
+      tempMap.set(point.x.toFixed(5), point);
+  }
+  const dedupedVisibleActualXY = Array.from(tempMap.values()).sort((a, b) => a.x - b.x);
+
+
   return {
-    labels: [], // Not used with linear scales and x,y data
+    labels: [],
     datasets: [
-      // Dataset for the lower boundary of the tolerance band
-      // It must have an ID to be targeted by the fill property of the upper band.
-      // Its line is transparent, but its data is crucial for the fill area.
       {
-        id: 'toleranceLowerLine', // Unique ID for targeting
-        data: toleranceLower,
-        borderColor: 'transparent', // Make the line invisible
-        borderWidth: 0,
-        pointRadius: 0,
-        fill: false, // This dataset itself does not fill
-        stepped: 'before', // Crucial for correct stepped rendering
-        tension: 0,
-        order: 3, // Draw this furthest back
-      },
-      // Dataset for the upper boundary of the tolerance band
-      // This is the dataset that will perform the fill down to the 'toleranceLowerLine'.
-      {
-        label: 'Tolerance', // This label will appear in the legend
-        data: toleranceUpper,
-        backgroundColor: 'rgba(255, 200, 0, 0.2)', // Fill color
-        borderColor: 'transparent', // No line for the upper boundary itself (just the fill)
-        borderWidth: 0,
-        pointRadius: 0,
-        fill: {
-            target: 'toleranceLowerLine', // Fill down to the dataset with this ID
-            above: 'rgba(255, 200, 0, 0.2)', // Ensure color is applied consistently
-            below: 'rgba(255, 200, 0, 0.2)'
-        },
-        stepped: 'before', // Crucial for correct stepped rendering of the fill
-        tension: 0,
-        order: 2, // Drawn in front of toleranceLowerLine, but behind Target and Input
-      },
-      // Target Line
-      {
+        id: 'targetLineId',
         label: 'Target',
         data: visibleTargetXY,
         borderColor: 'orange',
@@ -192,31 +290,30 @@ const chartData = computed(() => {
         fill: false,
         stepped: 'before',
         tension: 0,
-        order: 1, // Drawn in front of the tolerance fill
+        order: 1
       },
-      // Input Line
       {
         label: 'Input',
-        data: visibleActualXY,
+        data: dedupedVisibleActualXY,
         borderColor: 'limegreen',
         borderWidth: 2,
         pointRadius: 0,
         fill: false,
-        tension: 0.1, // Keep smooth for user input
-        order: 0, // Drawn on top of everything else
+        tension: 0,
+        stepped: 'after',
+        order: 0
       }
     ]
   }
 })
 
-// --- Chart Options ---
 const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   animation: {
-    duration: 0 // Disable animation for real-time updates
+    duration: 0
   },
-  parsing: false, // Required when providing {x,y} data directly
+  parsing: false,
   scales: {
     y: {
       min: 0,
@@ -227,18 +324,17 @@ const chartOptions = computed(() => ({
     x: {
       min: xMin.value,
       max: xMax.value,
-      type: 'linear', // Use linear scale for continuous time
+      type: 'linear',
       ticks: {
         color: 'black',
-        callback: function(value, index, ticks) {
-            // Display whole seconds
+        callback: function(value) {
             const step = 1;
             if (value % step === 0) {
               return `${Math.floor(value)}s`;
             }
             return null;
         },
-        maxTicksLimit: chartWindowDuration + 1, // Control number of visible ticks
+        maxTicksLimit: chartWindowDuration + 1,
       },
       grid: { color: 'rgba(0,0,0,0.05)' }
     }
@@ -247,8 +343,19 @@ const chartOptions = computed(() => ({
     legend: {
       labels: {
         color: 'black',
-        // Filter out the 'toleranceLowerLine' from the legend as it's just a boundary
-        filter: item => ['Input', 'Target', 'Tolerance'].includes(item.text)
+        filter: item => ['Input', 'Target'].includes(item.text),
+        generateLabels: function(chart) {
+            const defaultLabels = ChartJS.defaults.plugins.legend.labels.generateLabels(chart);
+            defaultLabels.push({
+                text: 'Tolerance',
+                fillStyle: 'rgba(255, 200, 0, 0.2)',
+                strokeStyle: 'transparent',
+                lineWidth: 0,
+                hidden: false,
+                datasetIndex: -1
+            });
+            return defaultLabels;
+        }
       }
     },
     annotation: {
@@ -256,7 +363,7 @@ const chartOptions = computed(() => ({
         inputMarker: {
           type: 'line',
           xMin: inputX.value,
-          xMax: inputX.value + 0.001, // A very thin line
+          xMax: inputX.value + 0.001,
           borderColor: 'rgb(0, 54, 69)',
           borderDash: [4, 4],
           borderWidth: 2,
@@ -270,115 +377,230 @@ const chartOptions = computed(() => ({
           }
         }
       }
+    },
+    toleranceFill: {
+        backgroundColor: 'rgba(255, 200, 0, 0.2)',
+        toleranceValue: tolerance
     }
   }
 }))
 
-// --- Game Loop ---
 function runGameLoop() {
-  function loop() {
-    if (gameState.value !== 'playing') return
-
-    elapsed.value = (performance.now() - startTime.value) / 1000
-
-    const currentFrameIndex = Math.floor(elapsed.value * fps);
-    if (currentFrameIndex < actualValues.value.length) {
-      actualValues.value[currentFrameIndex] = lastActual.value;
-
-      // Simple linear interpolation to fill gaps in actualValues for smooth rendering
-      if (currentFrameIndex > 0) {
-          let prevNonNullIndex = currentFrameIndex - 1;
-          while (prevNonNullIndex >= 0 && actualValues.value[prevNonNullIndex] === null) {
-              prevNonNullIndex--;
-          }
-          if (prevNonNullIndex >= 0 && actualValues.value[currentFrameIndex] !== null) {
-            const startValue = actualValues.value[prevNonNullIndex];
-            const endValue = actualValues.value[currentFrameIndex];
-            for (let i = prevNonNullIndex + 1; i < currentFrameIndex; i++) {
-                const fraction = (i - prevNonNullIndex) / (currentFrameIndex - prevNonNullIndex);
-                actualValues.value[i] = startValue + (endValue - startValue) * fraction;
-            }
-          }
+  function loop(currentTime) {
+    if (gameState.value !== 'playing') {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+        console.log('[LOOP-STOP] runGameLoop: stopping animation frame.');
       }
+      return;
     }
 
-    // Request chart update
+    const elapsedSinceLastTick = (currentTime - lastTickReceivedTime) / 1000; // in seconds
+    if (currentBackendTickValueAtLastMessage !== -1 && initialBackendTickOffset.value !== -1) { // Ensure initial values are set
+        // Calculate visualCurrentTick based on the initial offset
+        visualCurrentTick.value = (currentBackendTickValueAtLastMessage - initialBackendTickOffset.value) + elapsedSinceLastTick;
+        // Cap visualCurrentTick at the effective game duration for the client
+        const effectiveGameDuration = gameTotalTicks.value - initialBackendTickOffset.value;
+        visualCurrentTick.value = Math.min(visualCurrentTick.value, effectiveGameDuration);
+    } else {
+        // If initialBackendTickOffset is not yet determined, or no ticks received, visualCurrentTick stays at 0
+        visualCurrentTick.value = 0;
+    }
+
+    console.log(`[LOOP] visualCurrentTick=${visualCurrentTick.value.toFixed(2)}, xMin=${xMin.value.toFixed(2)}, xMax=${xMax.value.toFixed(2)}, inputX=${inputX.value.toFixed(2)}, Timer: ${Math.max(0, (gameTotalTicks.value - initialBackendTickOffset.value) - Math.floor(visualCurrentTick.value) - 1)}s`);
+
     if (chartRef.value?.chart) {
-      chartRef.value.chart.update('none'); // 'none' for no animation
-    }
-
-    // Game end condition
-    if (elapsed.value >= GAME_TOTAL_DURATION) {
-      gameState.value = 'ended'
-      cancelAnimationFrame(animationFrameId)
-      router.push({ path: '/end', query: { score: score.value, name, difficulty } })
-      return
+      chartRef.value.chart.update('none');
     }
 
     animationFrameId = requestAnimationFrame(loop)
   }
 
-  requestAnimationFrame(loop)
+  console.log('[LOOP-START] runGameLoop: Starting animation frame loop.');
+  animationFrameId = requestAnimationFrame(loop)
 }
 
-// --- WebSocket Setup ---
 function connectWebSocket() {
-  // Determine WebSocket URL based on development or production environment
   const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsHost = import.meta.env.DEV ? 'localhost:8000' : location.host;
-  const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/game`);
+  const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/game/${name.value}/${difficulty.value}`);
 
-  socket.onopen = () => socket.send(JSON.stringify({ name, difficulty }));
+  socket.onopen = () => {
+    console.log("WebSocket opened.");
+  };
+
+  let initialOffsetDetermined = false; // Flag to ensure offset is set only once after game starts playing
 
   socket.onmessage = event => {
     const data = JSON.parse(event.data);
+
     if (data.type === 'init') {
+      console.log("Received 'init' message:", data);
       targetCurve.value = data.targetCurve;
-      // Pre-calculate full stepped target curve once on init
-      fullSteppedTargetXY.value = getSteppedCurveWithXY(targetCurve.value, GAME_TOTAL_DURATION, fps);
+      gameTotalTicks.value = data.duration; // Raw total duration from backend
+
+      // Reset all relevant state for a new game
+      initialBackendTickOffset.value = -1; // Indicate it's not yet determined
+      initialOffsetDetermined = false;
+      rawActualBuffer.value = []; // Clear buffer
+      processedActualValues.value = []; // Clear processed data
+      lastActual.value = 0;
+      score.value = 0;
+      visualCurrentTick.value = -1; // Reset to indicate no progress yet
+
+      fullSteppedTargetXY.value = getSteppedCurveWithXY(targetCurve.value, gameTotalTicks.value, fps);
 
       gameState.value = 'countdown';
       const countdownTimer = setInterval(() => {
         countdown.value--;
+        console.log('Countdown:', countdown.value);
         if (countdown.value <= 0) {
           clearInterval(countdownTimer);
-          startTime.value = performance.now();
           gameState.value = 'playing';
+          console.log('Countdown finished, gameState set to playing. Starting runGameLoop.');
+
+          // Now that game is playing, process the buffered raw ticks and set the initial offset
+          if (!initialOffsetDetermined && rawActualBuffer.value.length > 0) {
+              // The initialBackendTickOffset is the tickNumber of the very first data point we received
+              initialBackendTickOffset.value = rawActualBuffer.value[0].x;
+              initialOffsetDetermined = true;
+              console.log(`[OFFSET-SET] Game started playing. First buffered raw tick: ${initialBackendTickOffset.value}. Setting initialBackendTickOffset.`);
+
+              // Process all buffered raw ticks and add to processedActualValues
+              processedActualValues.value = rawActualBuffer.value.map(p => ({
+                  x: p.x - initialBackendTickOffset.value,
+                  y: p.y
+              })).sort((a, b) => a.x - b.x);
+
+              // Initialize interpolation state with the *last* buffered raw tick
+              const lastBufferedTick = rawActualBuffer.value[rawActualBuffer.value.length - 1];
+              currentBackendTickValueAtLastMessage = lastBufferedTick.x;
+              lastActual.value = lastBufferedTick.y; // Ensure lastActual is current
+              lastTickReceivedTime = performance.now(); // Record current time for interpolation base
+
+              // Set visualCurrentTick to match the last processed point for a smooth start
+              visualCurrentTick.value = lastBufferedTick.x - initialBackendTickOffset.value;
+
+              console.log(`[CLIENT-INIT] Interpolation base set: rawTick=${currentBackendTickValueAtLastMessage}, offset=${initialBackendTickOffset.value}, visualCurrentTick=${visualCurrentTick.value.toFixed(2)}`);
+
+          } else if (!initialOffsetDetermined && rawActualBuffer.value.length === 0) {
+              // This case means no ticks were received during countdown.
+              // The very first tick received in 'playing' state will set the offset.
+              initialBackendTickOffset.value = 0; // Temporarily set to 0, will be overwritten by first tick if needed
+              initialOffsetDetermined = true; // Mark as determined (will use 0 or first tick)
+              currentBackendTickValueAtLastMessage = 0; // Assume 0 if no ticks yet
+              lastTickReceivedTime = performance.now();
+              visualCurrentTick.value = 0;
+              console.log("[OFFSET-SET] Game started playing. No buffered ticks. Assuming initialBackendTickOffset = 0.");
+          }
+
+
           runGameLoop();
         }
       }, 1000);
-    }
-    if (data.type === 'tick') {
-      if (typeof data.actual === 'number') lastActual.value = data.actual;
-      if (typeof data.totalScore === 'number') score.value = data.totalScore;
+    } else if (data.type === 'tick') {
+        // console.log(`[RAW-TICK] data.tickNumber=${data.tickNumber}, gameState=${gameState.value}`);
+        if (typeof data.actual === 'number') {
+            lastActual.value = data.actual; // Always keep track of the latest actual value
+        }
+        if (typeof data.totalScore === 'number') {
+            score.value = data.totalScore;
+        }
+
+        if (typeof data.tickNumber === 'number') {
+            // Always buffer raw ticks, regardless of gameState
+            const existingRawIndex = rawActualBuffer.value.findIndex(p => p.x === data.tickNumber);
+            if (existingRawIndex === -1) {
+                rawActualBuffer.value.push({ x: data.tickNumber, y: data.actual });
+            } else {
+                rawActualBuffer.value[existingRawIndex].y = data.actual;
+            }
+            rawActualBuffer.value.sort((a,b) => a.x - b.x);
+
+
+            if (gameState.value === 'playing') {
+                // If initial offset hasn't been determined yet (e.g., no ticks during countdown),
+                // use the very first tick received while playing to set it.
+                if (!initialOffsetDetermined) {
+                    initialBackendTickOffset.value = data.tickNumber;
+                    initialOffsetDetermined = true;
+                    console.log(`[OFFSET-SET] First tick received in playing state: data.tickNumber=${data.tickNumber}, setting initialBackendTickOffset=${initialBackendTickOffset.value}`);
+
+                    // Process all currently buffered raw ticks
+                    processedActualValues.value = rawActualBuffer.value.map(p => ({
+                        x: p.x - initialBackendTickOffset.value,
+                        y: p.y
+                    })).sort((a, b) => a.x - b.x);
+
+                    // Ensure visualCurrentTick starts from 0 (client's perspective)
+                    visualCurrentTick.value = 0;
+                    currentBackendTickValueAtLastMessage = data.tickNumber; // Base for interpolation
+                    lastTickReceivedTime = performance.now(); // Base for interpolation time
+
+                } else {
+                    // Game is playing, initial offset determined.
+                    // Add the current tick data to processedActualValues
+                    const offsetCorrectedTick = data.tickNumber - initialBackendTickOffset.value;
+                    const existingProcessedIndex = processedActualValues.value.findIndex(p => Math.abs(p.x - offsetCorrectedTick) < 0.0001);
+                    if (existingProcessedIndex === -1) {
+                        processedActualValues.value.push({ x: offsetCorrectedTick, y: data.actual });
+                    } else {
+                        processedActualValues.value[existingProcessedIndex].y = data.actual;
+                    }
+                    processedActualValues.value.sort((a,b) => a.x - b.x);
+                }
+
+                // Always update these for interpolation base with raw backend tick values
+                currentBackendTickValueAtLastMessage = data.tickNumber;
+                lastTickReceivedTime = performance.now(); // Record time when *this specific tick message* was received
+
+                console.log(`[TICK-PROCESS] RawTick=${data.tickNumber}, OffsetCorrectedTick=${(data.tickNumber - initialBackendTickOffset.value).toFixed(2)}, lastActual=${data.actual.toFixed(2)}, currentBackendTickValueAtLastMessage=${currentBackendTickValueAtLastMessage}, lastTickReceivedTime=${lastTickReceivedTime.toFixed(2)}`);
+            }
+        } else {
+            console.error("Tick message received, but 'tickNumber' is missing or not a number!", data);
+        }
+    } else if (data.type === 'end') {
+        console.log("Received 'end' message from backend:", data);
+
+        gameState.value = 'ended';
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+            console.log('[LOOP-STOP] Game ended: animation frame stopped.');
+        }
+
+        router.push({ path: '/end', query: { score: data.score, name: name.value, difficulty: difficulty.value } });
+
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.close();
+            console.log('WebSocket closed by frontend on game end.');
+        }
+    } else {
+      console.warn("Received unknown WebSocket message type:", data.type, data);
     }
   };
 
   socket.onerror = (error) => {
     console.error("WebSocket Error:", error);
-    // TODO: User feedback for connection errors
   };
 
   socket.onclose = (event) => {
     console.warn("WebSocket Closed:", event);
-    // TODO: User feedback for disconnected state
   };
 }
 
 onMounted(() => {
+  console.log('Component mounted. Connecting WebSocket.');
   connectWebSocket();
 });
 
-// Watch elapsed time to trigger chart updates
-watch(elapsed, () => {
-    if (gameState.value === 'playing' && chartRef.value?.chart) {
-        chartRef.value.chart.update('none');
-    }
+watch(visualCurrentTick, (newValue, oldValue) => {
+    // console.log(`visualCurrentTick changed from ${oldValue?.toFixed(2)} to ${newValue.toFixed(2)}. gameState: ${gameState.value}`);
 });
 </script>
 
 <style scoped>
-/* Scoped styles for the component */
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
 
 * {

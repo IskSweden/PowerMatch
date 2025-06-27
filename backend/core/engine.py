@@ -1,5 +1,6 @@
 import random
 import asyncio
+import time
 from ..mqtt_input import input_queue
 
 class GameEngine:
@@ -89,6 +90,10 @@ class GameEngine:
         last_known = 0.0
 
         for t in range(30):
+
+            tick_start_time = time.monotonic()
+
+
             try:
                 actual = await asyncio.wait_for(self.input_queue.get(), timeout=1.0)
                 last_known = actual
@@ -100,18 +105,19 @@ class GameEngine:
             tick_score = self.compute_tick_score(actual, target, tolerance)
             self.total_score += tick_score
 
-            yield {
+            tick_data_to_yield = {
                 "type": "tick",
+                "tickNumber": t,
                 "actual": actual,
                 "target": target,
                 "tolerance": tolerance,
                 "tickScore": tick_score,
                 "totalScore": round(self.total_score, 1)
             }
+            print(f"[ENGINE_YIEALD_DEBUG] Yielding: {tick_data_to_yield}")  # Debug print
+            yield tick_data_to_yield
 
-        yield {
-            "type": "end",
-            "score": round(self.total_score, 1),
-            "seed": self.seed,
-            "difficulty": self.difficulty
-        }
+            elapsed_time = time.monotonic() - tick_start_time
+            sleep_time = 1.0 - elapsed_time # Calculate how much time is left to sleep
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
