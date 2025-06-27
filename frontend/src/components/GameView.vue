@@ -23,75 +23,73 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
 import {
-  Chart as ChartJS,
-  LineElement,
-  PointElement,
-  LinearScale,
-  Title,
-  CategoryScale,
-  Filler,
-  Tooltip,
-  Legend
+  Chart as ChartJS, LineElement, PointElement, LinearScale, Title,
+  CategoryScale, Filler, Tooltip, Legend
 } from 'chart.js'
 import annotationPlugin from 'chartjs-plugin-annotation'
 
 ChartJS.register(LineElement, PointElement, LinearScale, Title, CategoryScale, Filler, Tooltip, Legend, annotationPlugin)
 const LineChart = Line
 
-// Routing and query
 const route = useRoute()
 const router = useRouter()
 const name = route.query.name || 'Player'
 const difficulty = route.query.difficulty || 'Medium'
 
-// Core game data
 const targetCurve = ref([])
-const tolerance = 10
 const actualValues = ref(Array(30).fill(null))
+const interpolatedActual = ref([])
+const tolerance = 10
 const score = ref(0)
 const lastActual = ref(0)
 
-const gameState = ref('loading') // 'loading' | 'countdown' | 'playing' | 'ended'
+const gameState = ref('loading')
 const countdown = ref(3)
 const startTime = ref(null)
 const elapsed = ref(0)
 const timeLeft = computed(() => Math.max(0, 30 - elapsed.value))
 const chartRef = ref(null)
 
-// Game config
 const fps = 60
-const windowSize = 10
 let animationFrameId = null
+let frameSkip = 0
 
-// Chart Data
+const inputX = computed(() => elapsed.value < 3 ? elapsed.value : elapsed.value < 20 ? xMin.value + 3 : elapsed.value);
+
 const chartData = computed(() => {
-  const labels = Array.from({ length: fps * windowSize }, (_, i) => (xMin.value + i / fps).toFixed(2))
+  const labels = Array.from({ length: fps * 10 }, (_, i) => (xMin.value + i / fps).toFixed(2))
 
-  const targetStepped = getSteppedCurve(targetCurve.value)
-  const toleranceUpper = targetStepped.map(v => Math.min(v + tolerance, 135))
-  const toleranceLower = targetStepped.map(v => Math.max(v - tolerance, 0))
-  const actualStepped = getSteppedCurve(actualValues.value)
+  const steppedTargetFull = getSteppedCurve(targetCurve.value)
+  const steppedTarget = steppedTargetFull
 
+  const toleranceUpper = steppedTarget.map(v => v != null ? Math.min(v + tolerance, 135) : null)
+  const toleranceLower = steppedTarget.map(v => v != null ? Math.max(v - tolerance, 0) : null)
+
+  const visibleActual = interpolatedActual.value.map((val, i) => {
+    const time = i / fps
+    return time <= elapsed.value ? val : null
+  })
+  const steppedActual = visibleActual
   return {
     labels,
     datasets: [
       {
         label: 'Input',
-        data: actualStepped.slice(startIndex.value, endIndex.value),
+        data: steppedActual,
         borderColor: 'limegreen',
         borderWidth: 3,
         tension: 0,
         pointRadius: 0,
-        stepped: true,
+        stepped: false,
         fill: false
       },
       {
         label: 'Target',
-        data: targetStepped.slice(startIndex.value, endIndex.value),
+        data: steppedTarget.slice(startIndex.value, endIndex.value),
         borderColor: 'orange',
         borderDash: [4, 4],
         borderWidth: 2,
@@ -103,7 +101,6 @@ const chartData = computed(() => {
         data: toleranceUpper.slice(startIndex.value, endIndex.value),
         backgroundColor: 'rgba(255, 200, 0, 0.2)',
         stepped: true,
-        pointRadius: 0,
         borderWidth: 0,
         fill: '-1'
       },
@@ -111,7 +108,6 @@ const chartData = computed(() => {
         data: toleranceLower.slice(startIndex.value, endIndex.value),
         backgroundColor: 'rgba(255, 200, 0, 0.2)',
         stepped: true,
-        pointRadius: 0,
         borderWidth: 0,
         fill: '-1'
       }
@@ -119,12 +115,8 @@ const chartData = computed(() => {
   }
 })
 
-const xMin = computed(() => {
-  if (elapsed.value < 3) return 0
-  if (elapsed.value < 20) return elapsed.value - 3
-  return 20
-})
-const xMax = computed(() => xMin.value + windowSize)
+const xMin = computed(() => elapsed.value < 3 ? 0 : elapsed.value < 20 ? elapsed.value - 3 : 20)
+const xMax = computed(() => xMin.value + 10)
 const startIndex = computed(() => Math.floor(xMin.value * fps))
 const endIndex = computed(() => Math.ceil(xMax.value * fps))
 
@@ -160,18 +152,18 @@ const chartOptions = computed(() => ({
       annotations: {
         inputMarker: {
           type: 'line',
-          xMin: inputLineX(),
-          xMax: inputLineX(),
+          xMin: inputX.value,
+      xMax: inputX.value + 0.001,
           borderColor: 'rgb(0, 54, 69)',
-          borderWidth: 2,
           borderDash: [4, 4],
+          borderWidth: 2,
           label: {
             display: true,
             content: 'You are here',
             color: 'white',
             backgroundColor: 'rgb(0, 54, 69)',
-            position: 'start',
-            font: { weight: 'bold' }
+            font: { weight: 'bold' },
+            position: 'start'
           }
         }
       }
@@ -179,30 +171,35 @@ const chartOptions = computed(() => ({
   }
 }))
 
-function inputLineX() {
-  if (elapsed.value < 3) return elapsed.value
-  if (elapsed.value < 20) return xMin.value + 3
-  return elapsed.value
-}
+
 
 function getSteppedCurve(arr) {
   return arr.flatMap(val => Array(fps).fill(val ?? null))
 }
 
+function interpolateActuals(rawValues) {
+  const result = []
+  for (let i = 0; i < 29; i++) {
+    const v1 = rawValues[i]
+    const v2 = rawValues[i + 1] ?? v1
+    for (let j = 0; j < fps; j++) {
+      result.push(v1 !== null && v2 !== null ? v1 + (v2 - v1) * (j / fps) : v1)
+    }
+  }
+  const last = rawValues[29] ?? rawValues.findLast(v => v !== null) ?? 0
+  result.push(...Array(fps).fill(last))
+  return result
+}
+
 function connectWebSocket() {
   const socket = new WebSocket(import.meta.env.DEV ? 'ws://localhost:8000/ws/game' : `ws://${location.host}/ws/game`)
-
-  socket.onopen = () => {
-    socket.send(JSON.stringify({ name, difficulty }))
-  }
+  socket.onopen = () => socket.send(JSON.stringify({ name, difficulty }))
 
   socket.onmessage = event => {
     const data = JSON.parse(event.data)
-
     if (data.type === 'init') {
       targetCurve.value = data.targetCurve
       gameState.value = 'countdown'
-
       const countdownTimer = setInterval(() => {
         countdown.value--
         if (countdown.value <= 0) {
@@ -213,7 +210,6 @@ function connectWebSocket() {
         }
       }, 1000)
     }
-
     if (data.type === 'tick') {
       if (typeof data.actual === 'number') lastActual.value = data.actual
       if (typeof data.totalScore === 'number') score.value = data.totalScore
@@ -226,19 +222,21 @@ function runGameLoop() {
     if (gameState.value !== 'playing') return
     elapsed.value = (performance.now() - startTime.value) / 1000
 
-    if (elapsed.value < 30) {
-      const currentTick = Math.floor(elapsed.value)
-      actualValues.value[currentTick] = lastActual.value
-    } else {
+    const t = Math.floor(elapsed.value)
+    if (t < 30) actualValues.value[t] = lastActual.value
+
+    interpolatedActual.value = interpolateActuals(actualValues.value)
+
+    if (++frameSkip % 3 === 0 && chartRef.value?.chart) chartRef.value.chart.update('none')
+
+    if (elapsed.value >= 30) {
       gameState.value = 'ended'
+      cancelAnimationFrame(animationFrameId)
       router.push({ path: '/end', query: { score: score.value, name, difficulty } })
       return
     }
-
-    if (chartRef.value?.chart) chartRef.value.chart.update('none')
     animationFrameId = requestAnimationFrame(loop)
   }
-
   requestAnimationFrame(loop)
 }
 
@@ -250,16 +248,8 @@ onMounted(() => {
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
 
-* {
-  font-family: 'Poppins', sans-serif;
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  background: rgb(0, 117, 130);
-}
-
+* { font-family: 'Poppins', sans-serif; box-sizing: border-box; }
+body { margin: 0; background: rgb(0, 117, 130); }
 .game-wrapper {
   display: flex;
   flex-direction: column;
@@ -268,7 +258,6 @@ body {
   color: white;
   padding: 1rem;
 }
-
 .info-bar {
   display: flex;
   justify-content: space-between;
@@ -279,12 +268,10 @@ body {
   border-radius: 0.5rem;
   margin-bottom: 1rem;
 }
-
 .info-bar h1 {
   margin: 0;
   font-size: 1.5rem;
 }
-
 .chart-container {
   flex-grow: 1;
   width: 100%;
@@ -294,7 +281,6 @@ body {
   border-radius: 1rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
-
 .loading-overlay {
   position: fixed;
   inset: 0;
