@@ -1,5 +1,6 @@
 # backend/services/game_runner.py
 import asyncio
+from fastapi import WebSocket, WebSocketDisconnect
 from ..core.engine import GameEngine
 from ..db import SessionLocal
 from ..models.score import Score
@@ -29,8 +30,27 @@ class GameRunner:
             "difficulty": self.difficulty,
             "seed": engine.seed,
             "duration": len(target),
-            "start_time": start_time
+            #"start_time": start_time frontend sets this
         })
+
+        print("[WS] Waiting for 'start' signal from frontend...")
+        start_received = False
+        while not start_received:
+            try:
+                message = await self.websocket.receive_json()
+                if message.get("type") == "start":
+                    print("[WS] Received 'start' signal. Commencing game ticks.")
+                    start_received = True
+                else:
+                    print(f"[WS] Received unexpected message type during wait for start: {message.get('type')}. Ignoring.")
+            except WebSocketDisconnect:
+                print(f"[WS_DISCONNECT] WebSocket disconnected while waiting for 'start' for {self.name}.")
+                return # Exit the session if disconnected
+            except Exception as e:
+                print(f"[WS_ERROR] Error receiving message while waiting for 'start': {e}")
+                traceback.print_exc()
+                return # Exit the session on error
+
         print("[WS] Started game loop (expecting ticks...)") # Added debug
 
         try: # Wrap the game loop in a try-except to catch errors within it
