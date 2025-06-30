@@ -10,7 +10,7 @@ setup(
     author_email="skoog.isak@gmail.com",
     url="https://github.com/IskSweden/PowerMatch",
     license="MIT",
-    packages=find_packages(),
+    packages=find_packages(include=["powermatch", "powermatch.*"]),
     include_package_data=True,
     install_requires=[
         "fastapi~=0.110",
