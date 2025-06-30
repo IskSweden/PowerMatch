@@ -1,7 +1,7 @@
 import random
 import asyncio
 import time
-from ..mqtt_input import input_queue
+from .mqtt_input import input_queue
 
 class GameEngine:
     def __init__(self, name, difficulty, input_source=None):

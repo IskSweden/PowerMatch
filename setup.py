@@ -2,11 +2,15 @@ from setuptools import setup, find_packages
 
 setup(
     name="powermatch",
-    version="0.1.0",
+    version="1.0.0",
+    description="PowerMatch — Real-Time Precision Energy Game Backend",
+    long_description=open("README.md", encoding="utf-8").read(),
+    long_description_content_type="text/markdown",
     author="Isak Skoog",
-    description="Real-time energy precision game backend",
-    packages=["powermatch"],
-    package_dir={"": "backend"},
+    author_email="skoog.isak@gmail.com",
+    url="https://github.com/IskSweden/PowerMatch",
+    license="MIT",
+    packages=find_packages(),
     include_package_data=True,
     install_requires=[
         "fastapi~=0.110",
@@ -14,11 +18,10 @@ setup(
         "paho-mqtt~=1.6",
         "python-dotenv~=1.0",
         "websockets~=12.0",
-        "rich~=13.7"
     ],
     entry_points={
         "console_scripts": [
-            "powermatch = powermatch.cli:main"
+            "powermatch=powermatch.cli:main",
         ]
     },
     classifiers=[
@@ -26,6 +29,8 @@ setup(
         "Framework :: FastAPI",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
+        "Environment :: Console",
+        "Topic :: Games/Entertainment :: Simulation",
     ],
-    python_requires='>=3.8',
+    python_requires=">=3.7",
 )

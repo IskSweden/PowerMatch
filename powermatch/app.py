@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 import asyncio
-from ..db import init_db
-from ..routes import game_ws, highscores
-from ..mqtt_input import MQTTInputHandler
+
+from . import game_ws
+from .db import init_db
+from . import highscores
+from .mqtt_input import MQTTInputHandler
 from contextlib import asynccontextmanager
 from fastapi.responses import FileResponse
 

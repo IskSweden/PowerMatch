@@ -1,12 +1,12 @@
 # backend/services/game_runner.py
 import asyncio
 from fastapi import WebSocket, WebSocketDisconnect
-from ..core.engine import GameEngine
-from ..db import SessionLocal
-from ..models.score import Score
+from .engine import GameEngine
+from .db import SessionLocal
+from .score import Score
 from datetime import datetime, timezone
 import traceback
-from ..mqtt_input import input_queue # Import the shared queue
+from .mqtt_input import input_queue # Import the shared queue
 
 class GameRunner:
     def __init__(self, name, difficulty, websocket, ws_manager):
