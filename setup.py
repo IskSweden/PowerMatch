@@ -18,6 +18,8 @@ setup(
         "paho-mqtt~=1.6",
         "python-dotenv~=1.0",
         "websockets~=12.0",
+        "rich~=13.7",
+        "sqlalchemy~=2.0",
     ],
     entry_points={
         "console_scripts": [
