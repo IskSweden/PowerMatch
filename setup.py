@@ -2,10 +2,11 @@ from setuptools import setup, find_packages
 
 setup(
     name="powermatch",
-    version="0.1.3",
+    version="0.1.0",
     author="Isak Skoog",
     description="Real-time energy precision game backend",
-    packages=find_packages(),
+    packages=["powermatch"],
+    package_dir={"": "backend"},
     include_package_data=True,
     install_requires=[
         "fastapi~=0.110",
