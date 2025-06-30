@@ -29,35 +29,35 @@ Over a 30-second session, the player’s real-time power input (e.g., from a con
 ```
 PowerMatch/
 ├── backend/
-│   ├── bridge.py
-│   ├── curve.py
-│   ├── db.py
-│   ├── engine.py
-│   ├── main.py
-│   ├── mqtt.py
-│   └── websocket_manager.py
+│ ├── core/
+│ │ └── engine.py
+│ ├── managers/
+│ │ └── ws.py
+│ ├── models/
+│ │ └── score.py
+│ ├── routes/
+│ │ ├── game_ws.py
+│ │ └── highscores.py
+│ ├── services/
+│ │ └── game_runner.py
+│ ├── app.py
+│ ├── db.py
+│ └── mqtt_input.py
 ├── frontend/
-│   ├── public/
-│   │   └── vite.svg
-│   ├── src/
-│   │   ├── assets/
-│   │   ├── components/
-│   │   ├── views/
-│   │   │   ├── EndScreen.vue
-│   │   │   ├── PowerCurveGame.vue
-│   │   │   └── StartGame.vue
-│   │   ├── App.vue
-│   │   ├── main.js
-│   │   ├── router.js
-│   │   └── style.css
-│   ├── index.html
-│   ├── package.json
-│   ├── package-lock.json
-│   └── vite.config.js
-├── scores.db              # Local SQLite database for score logging
+│ ├── public/
+│ ├── src/
+│ │ ├── assets/
+│ │ ├── components/
+│ │ │ ├── EndScreen.vue
+│ │ │ ├── GameView.vue
+│ │ │ └── StartScreen.vue
+│ │ ├── App.vue
+│ │ ├── main.js
+│ │ ├── router.js
+│ │ └── style.css
+│ └── index.html
 ├── requirements.txt
-├── .gitignore
-└── README.md
+├── README.md
 ```
 
 ---
@@ -115,15 +115,15 @@ start "" "C:\Program Files\mosquitto\mosquitto.exe" -c "C:\Program Files\mosquit
 
 echo.
 echo Starting FastAPI game server...
-"C:\Users\skoog\Documents\PowerMatch\.venv\Scripts\python.exe" -m uvicorn backend.main:app --reload
+"C:\Users\{YOUR_NAME}\Documents\PowerMatch\.venv\Scripts\python.exe" -m uvicorn backend.main:app --reload
 
 pause
 ```
 
 📌 This script assumes:
-- Mosquitto is installed at `C:\Program Files\mosquitto\`
+- Mosquitto is installed at `C:\Program Files\mosquitto\` and is correctly configured for the right topic
 - Your Python virtual environment is in `.venv\`
-- FastAPI runs from `backend/main.py`
+- FastAPI runs from `backend/app.py`
 
 ---
 
@@ -139,15 +139,13 @@ pause
 
 ## Future Plans
 
-- 🎯 Leaderboard UI
 - 📊 Score analytics
 
 ---
 
 ## Author
 
-Made by [Isak Skoog](https://github.com/IskSweden)  
-Feel free to fork, contribute, or reach out!
+Made by [Isak Skoog](https://github.com/IskSweden) as part of a Internship at Eniwa AG.
 
 ---
 
