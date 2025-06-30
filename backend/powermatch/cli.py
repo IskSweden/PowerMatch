@@ -22,4 +22,4 @@ def main():
     console.print("[bold cyan]Running at [yellow]http://localhost:8000[/yellow][/bold cyan]")
 
     # This must match your app layout:
-    uvicorn.run("app:create_app", host="0.0.0.0", port=8000, reload=True, factory=True)
+    uvicorn.run("powermatch.app:create_app", host="0.0.0.0", port=8000, reload=True, factory=True)
