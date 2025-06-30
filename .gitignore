@@ -21,7 +21,6 @@ venv/
 # Node/Vue/Vite Frontend
 # ======================
 node_modules/
-dist/
 .vite/
 *.local
 *.svelte-kit/
