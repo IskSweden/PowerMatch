@@ -12,6 +12,9 @@ setup(
     license="MIT",
     packages=find_packages(include=["powermatch", "powermatch.*"]),
     include_package_data=True,
+    package_data={
+        "powermatch": ["frontend/dist/index.html", "frontend/dist/assets/*"],
+    },
     install_requires=[
         "fastapi~=0.110",
         "uvicorn~=0.22",
