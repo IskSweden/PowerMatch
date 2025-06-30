@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 import asyncio
-
+from pathlib import Path
 from . import game_ws
 from .db import init_db
 from . import highscores
@@ -38,18 +38,17 @@ def create_app():
         allow_headers=["*"],
     )
 
-    dist_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
-    assets_dir = os.path.join(dist_dir, "assets")
+    # ✅ Fixed: resolve path relative to this file (inside installed powermatch package)
+    base_dir = Path(__file__).parent
+    dist_dir = base_dir / "frontend" / "dist"
+    assets_dir = dist_dir / "assets"
+    index_file = dist_dir / "index.html"
 
-    # ✅ Mount only static /assets
-    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-   
-
-    # ✅ Catch all unmatched routes and serve index.html manually
     @app.get("/{path_name:path}")
     async def catch_all(path_name: str):
-        file_path = os.path.join(dist_dir, "index.html")
-        return FileResponse(file_path)
+        return FileResponse(index_file)
 
     return app
