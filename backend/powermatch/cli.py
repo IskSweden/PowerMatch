@@ -14,12 +14,12 @@ def main():
         TextColumn("[progress.description]{task.description}"),
         transient=True,
     ) as progress:
-        task = progress.add_task("Installing dependencies", total=None)
-        time.sleep(0.8)
-        progress.update(task, description="Verifying MQTT broker connection")
-        time.sleep(0.8)
-        progress.update(task, description="Launching FastAPI server")
-        time.sleep(0.8)
+        task = progress.add_task("Loading app factory", total=None)
+        time.sleep(0.5)
+        progress.update(task, description="Starting FastAPI server")
+        time.sleep(0.5)
 
-    console.print("[bold cyan]Starting backend on [yellow]http://localhost:8000[/yellow][/bold cyan]")
-    uvicorn.run("powermatch.app:app", host="0.0.0.0", port=8000)
+    console.print("[bold cyan]Running at [yellow]http://localhost:8000[/yellow][/bold cyan]")
+
+    # This must match your app layout:
+    uvicorn.run("app:create_app", host="0.0.0.0", port=8000, reload=True, factory=True)
