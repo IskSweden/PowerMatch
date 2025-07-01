@@ -28,20 +28,25 @@ PowerMatch is a real-time energy game where players try to match their live powe
 
 ## Installation of the Package
 
-### 1. Clone and set up Python environment
+### 1. Quick install without code download
 
 ```bash
-git clone https://github.com/IskSweden/PowerMatch.git@main
+python3 -m venv powermatch-venv
+source powermatch-venv/bin/activate
+pip install --upgrade pip
+pip install --no-cache-dir git+https://github.com/IskSweden/PowerMatch.git@v1.0.0
+```
+
+### 2. Download and Install the Package from Github
+
+```bash
+git clone https://github.com/IskSweden/PowerMatch.git
 cd PowerMatch
 python3 -m venv powermatch-venv
 source powermatch-venv/bin/activate
 pip install --upgrade pip
-```
+pip install .
 
-### 2. Install de Package from Github
-
-```bash
-pip install --no-cache-dir git+https://github.com/IskSweden/PowerMatch.git@main
 ```
 
 ### 3. Run the game server with served frontend
