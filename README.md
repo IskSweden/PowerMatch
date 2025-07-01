@@ -38,7 +38,7 @@ source powermatch-venv/bin/activate
 pip install --upgrade pip
 ```
 
-### 2.Install de Package from Github
+### 2. Install de Package from Github
 
 ```bash
 pip install --no-cache-dir git+https://github.com/IskSweden/PowerMatch.git@main
@@ -96,7 +96,7 @@ self.topic = "/eniwa/energy/device/1091A8AB9138/status/evt"     # Change to corr
 ---
 
 ## File structure 
-
+<pre>
 PowerMatch/
 ├── powermatch/
 │   ├── app.py          # FastAPI app + static serving
@@ -113,12 +113,13 @@ PowerMatch/
 ├── setup.py            # Pip install config
 ├── MANIFEST.in         # Package static files
 └── README.md           # This file
-
+</pre>
 ---
 
 ## Author
 
-Made by Isak Skoog as part of an internship at Eniwa AG 🇨🇭
+Made by Isak Skoog as part of an internship at Eniwa AG.
+Contact:
 [skoog.isak@gmail.com](mailto:skoog.isak@gmail.com)
 
 ## License
