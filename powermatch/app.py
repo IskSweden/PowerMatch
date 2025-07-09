@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect # <--- ADDED WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect # 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
@@ -21,7 +21,6 @@ async def lifespan(app: FastAPI):
     mqtt.start()
     print("MQTT handler started.") # Debug print
     yield
-    # You might want to add mqtt.stop() here if your MQTTInputHandler has one
     print("Application shutdown complete.") # Debug print
 
 def create_app():
@@ -38,7 +37,6 @@ def create_app():
         allow_headers=["*"],
     )
 
-    # ✅ Fixed: resolve path relative to this file (inside installed powermatch package)
     base_dir = Path(__file__).parent
     dist_dir = base_dir / "frontend" / "dist"
     assets_dir = dist_dir / "assets"

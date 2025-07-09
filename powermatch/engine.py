@@ -14,7 +14,6 @@ class GameEngine:
         self.input_queue = input_source or input_queue
 
     def generate_curve(self):
-        import random
         random.seed(self.seed)
         curve = []
 
