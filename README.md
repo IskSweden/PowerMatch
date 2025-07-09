@@ -123,7 +123,7 @@ PowerMatch/
 
 ## Author
 
-Made by Isak Skoog as part of an internship at Eniwa AG.
+Made by Isak Skoog.
 Contact:
 [skoog.isak@gmail.com](mailto:skoog.isak@gmail.com)
 
