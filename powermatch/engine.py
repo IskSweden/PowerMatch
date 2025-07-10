@@ -1,6 +1,8 @@
 import random
 import asyncio
 import time
+import json
+import os
 from .mqtt_input import input_queue
 
 class GameEngine:
@@ -9,47 +11,27 @@ class GameEngine:
         self.difficulty = difficulty
         self.seed = random.randint(1000, 9999)
         self.target_curve = self.generate_curve()
-        self.tolerance_curve = self.generate_tolerance()
+        self.tolerance_curve = self.load_precomputed_curve()
         self.total_score = 0
         self.input_queue = input_source or input_queue
 
-    def generate_curve(self):
-        random.seed(self.seed)
-        curve = []
+    def load_precomputed_curve(self):
+        try:
+            with open("./data/normalized_curves.json", "r", encoding="utf-8") as f:
+                all_curves = json.load(f)
 
-        # Wattage zones
-        low = lambda: random.uniform(10, 30)
-        mid = lambda: random.uniform(45, 90)
-        high = lambda: random.uniform(100, 135)
-        zones = [low, mid, high]
+            key = self.difficulty.lower()
+            curve = all_curves.get(key, {}).get("curve", [])
 
-        i = 0
-        prev_zone = None
+            if not curve or len(curve) != 30:
+                raise ValueError("Invalid or missing curve data")
 
-        while i < 30:
-            duration = random.randint(2, 4)
-            duration = min(duration, 30 - i)  # Don't overflow
+            print(f"Loaded curve from JSON for difficulty {self.difficulty}: {curve}")
+            return curve
 
-            next_zone = random.choice([z for z in zones if z != prev_zone])
-            prev_zone = next_zone
-            value = round(next_zone(), 1)
-
-            curve.extend([value] * duration)
-            i += duration
-
-        # Pad to exactly 30 ticks if undershot
-        while len(curve) < 30:
-            curve.append(curve[-1])
-
-        # Force low and high values at least once
-        curve[random.randint(0, 5)] = round(low(), 1)
-        curve[random.randint(24, 29)] = round(high(), 1)
-
-        print(f"Generated curve: {curve} with seed {self.seed}")
-        print(f"Curve length: {len(curve)} → {curve}")
-        return curve
-
-
+        except Exception as e:
+            print(f"[ERROR] Could not load precomputed curve: {e}")
+            return [0.0] * 30  # fallback
 
 
 
