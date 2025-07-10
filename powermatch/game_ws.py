@@ -1,8 +1,7 @@
 # backend/routes/game_ws.py
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from .game_runner import GameRunner
-from .ws import WebSocketManager
-import json
+from . game_runner import GameRunner
+from . ws import WebSocketManager
 
 router = APIRouter()
 ws_manager = WebSocketManager()

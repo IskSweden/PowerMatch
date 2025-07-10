@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from .score import Base
+from . score import Base
 
 DATABASE_URL = "sqlite:///./scores.db"
 

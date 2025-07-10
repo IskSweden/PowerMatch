@@ -5,9 +5,9 @@ import os
 import asyncio
 from pathlib import Path
 from . import game_ws
-from .db import init_db
+from . db import init_db
 from . import highscores
-from .mqtt_input import MQTTInputHandler
+from . mqtt_input import MQTTInputHandler
 from contextlib import asynccontextmanager
 from fastapi.responses import FileResponse
 

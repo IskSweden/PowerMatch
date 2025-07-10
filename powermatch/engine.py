@@ -3,35 +3,38 @@ import asyncio
 import time
 import json
 import os
-from .mqtt_input import input_queue
+from . mqtt_input import input_queue
 
 class GameEngine:
     def __init__(self, name, difficulty, input_source=None):
         self.name = name
         self.difficulty = difficulty
         self.seed = random.randint(1000, 9999)
-        self.target_curve = self.generate_curve()
-        self.tolerance_curve = self.load_precomputed_curve()
+        self.target_curve = self.load_precomputed_curve()
+        self.tolerance_curve = self.generate_tolerance()
         self.total_score = 0
         self.input_queue = input_source or input_queue
 
     def load_precomputed_curve(self):
         try:
-            with open("./data/normalized_curves.json", "r", encoding="utf-8") as f:
+            base_dir = os.path.dirname(os.path.abspath(__file__))  # → powermatch/
+            json_path = os.path.join(base_dir, "data", "normalized_curves.json")
+
+            with open(json_path, "r", encoding="utf-8") as f:
                 all_curves = json.load(f)
 
             key = self.difficulty.lower()
             curve = all_curves.get(key, {}).get("curve", [])
 
             if not curve or len(curve) != 30:
-                raise ValueError("Invalid or missing curve data")
+                raise ValueError(f"Curve for '{self.difficulty}' not valid or missing.")
 
             print(f"Loaded curve from JSON for difficulty {self.difficulty}: {curve}")
             return curve
 
         except Exception as e:
             print(f"[ERROR] Could not load precomputed curve: {e}")
-            return [0.0] * 30  # fallback
+            return [0.0] * 30
 
 
 
