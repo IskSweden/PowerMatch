@@ -6,7 +6,7 @@ from . db import SessionLocal
 from . score import Score
 from datetime import datetime, timezone
 import traceback
-from . mqtt_input import input_queue # Import the shared queue
+from . mqtt_input import input_queue, clear_input_queue # Import the shared queue
 
 class GameRunner:
     def __init__(self, name, difficulty, websocket, ws_manager):
@@ -19,6 +19,11 @@ class GameRunner:
     async def run_game_session(self):
         print(f"[GAME_SESSION_START] Starting game session for {self.name}") # Added debug
         engine = GameEngine(name=self.name, difficulty=self.difficulty, input_source=input_queue)
+
+        print(f"[DEBUG] Queue size before clear: {input_queue.qsize()}")
+        await clear_input_queue()
+        print(f"[DEBUG] Queue cleared. Size after clear: {input_queue.qsize()}")
+
         target, tolerance = engine.get_curve_preview()
         start_time = datetime.now(timezone.utc).timestamp()
         print("[WS] Sending INIT to frontend")

@@ -46,3 +46,15 @@ class MQTTInputHandler:
 
         except Exception as e:
             print(f"[MQTT] Failed to parse message: {e}")
+
+
+
+async def clear_input_queue():
+    cleared = 0
+    while not input_queue.empty():
+        try:
+            input_queue.get_nowait()
+            cleared += 1
+        except asyncio.QueueEmpty:
+            break
+    print(f"[MQTT] Cleared {cleared} old input(s) from queue.")
