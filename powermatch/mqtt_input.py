@@ -28,13 +28,9 @@ class MQTTInputHandler:
 
         try:
             payload = json.loads(msg.payload.decode())
-            reader_data = payload.get("reader_data", [])
-            watt_value = None
-            for item in reader_data:
-                if "1-0:1.7.0.255" in item:
-                    watt_value = float(item["1-0:1.7.0.255"])
-                    watt_value = watt_value * 1000 # kw to W
-                    break
+            params = payload.get("params", {})
+            em_data = params.get("em:0", {})
+            watt_value = em_data.get("c_aprt_power")
 
             if watt_value is not None:
                 self.loop.call_soon_threadsafe(
@@ -42,7 +38,7 @@ class MQTTInputHandler:
                 )
                 print(f"[MQTT] Queued power: {watt_value}W")
             else:
-                print("[MQTT] ⚠️ Wattage key not found in reader_data.")
+                print("[MQTT] Wattage key not found in reader_data.")
 
         except Exception as e:
             print(f"[MQTT] Failed to parse message: {e}")
