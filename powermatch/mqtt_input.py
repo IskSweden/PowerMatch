@@ -20,8 +20,8 @@ class MQTTInputHandler:
         print(f"MQTT connecting to {self.broker} and subscribing to {self.topic}")
 
     def _on_connect(self, client, userdata, flags, rc):
-        print("MQTT connected")
         client.subscribe(self.topic)
+        print("MQTT connected")
 
     def _on_message(self, client, userdata, msg):
         print(f"[MQTT] Received message on topic {msg.topic}: {msg.payload.decode()}")
