@@ -8,7 +8,7 @@ input_queue = asyncio.Queue()
 class MQTTInputHandler:
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self.broker = "raspberrypi.local"  # Change to correct MQTT broker address
-        self.topic = "/eniwa/energy/device/1091A8AB9138/status/evt" # Change to correct MQTT topic
+        self.topic = "/Strommessung_PowerMatch/events/rpc" # Change to correct MQTT topic
         self.client = mqtt.Client()
         self.loop = loop  # store loop explicitly
 
