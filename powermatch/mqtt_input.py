@@ -20,14 +20,16 @@ class MQTTInputHandler:
         print(f"MQTT connecting to {self.broker} and subscribing to {self.topic}")
 
     def _on_connect(self, client, userdata, flags, rc):
-        print("✅ MQTT connected")
+        print("MQTT connected")
         client.subscribe(self.topic)
 
     def _on_message(self, client, userdata, msg):
-        #print(f"[MQTT] Received message on topic {msg.topic}: {msg.payload.decode()}") debugging
+        print(f"[MQTT] Received message on topic {msg.topic}: {msg.payload.decode()}")
 
         try:
-            payload = json.loads(msg.payload.decode())
+            decoded = msg.payload.decode()
+            print("[DEBUG] Raw MQTT payload: {decoded}")
+            payload = json.loads(decoded)
             params = payload.get("params", {})
             em_data = params.get("em:0", {})
             watt_value = em_data.get("c_aprt_power")
