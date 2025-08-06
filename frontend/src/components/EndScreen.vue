@@ -43,7 +43,7 @@ const playButton = ref(null)
 
 
 const callHighscoreAPI = () => {
-  fetch('esp32-F57EF4.local/api/highscore') // REPLACE url
+  fetch('http://192.168.1.106/api/highscore') // REPLACE url
     .catch(e => console.error('failed t call highscore API', e))
 }
 
