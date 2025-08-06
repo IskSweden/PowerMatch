@@ -28,7 +28,7 @@ class MQTTInputHandler:
 
         try:
             decoded = msg.payload.decode()
-            print("[DEBUG] Raw MQTT payload: {decoded}")
+            print(f"[DEBUG] Raw MQTT payload: {decoded}")
             payload = json.loads(decoded)
             params = payload.get("params", {})
             em_data = params.get("em:0", {})
