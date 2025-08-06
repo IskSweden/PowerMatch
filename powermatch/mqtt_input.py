@@ -28,11 +28,10 @@ class MQTTInputHandler:
 
         try:
             decoded = msg.payload.decode()
-            print(f"[DEBUG] Raw MQTT payload: {decoded}")
             payload = json.loads(decoded)
             params = payload.get("params", {})
             em_data = params.get("em:0", {})
-            watt_value = em_data.get("c_aprt_power")
+            watt_value = em_data.get("c_act_power")
 
             if watt_value is not None:
                 self.loop.call_soon_threadsafe(

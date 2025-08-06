@@ -39,7 +39,7 @@
       </div>
 
       <div class="leaderboard" v-if="highscores">
-        <h2>🏆 All-Time Top 5</h2>
+        <h2>All-Time Top 5</h2>
         <ul>
           <li v-for="(entry, i) in highscores.alltime" :key="'a'+i">
             <span class="rank">#{{ i + 1 }}</span>
@@ -48,7 +48,7 @@
           </li>
         </ul>
 
-        <h3>🔥 Recent (24h)</h3>
+        <h3>Recent (24h)</h3>
         <ul>
           <li v-for="(entry, i) in highscores.recent" :key="'r'+i">
             <span class="entry">{{ entry.name }}</span>

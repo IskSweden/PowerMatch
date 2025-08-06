@@ -10,9 +10,9 @@
 
     <div v-else>
       <div class="info-bar">
-        <div>⏱ {{ remainingTime }}s</div>
+        <div>{{ remainingTime }}s</div>
         <h1>PowerMatch</h1>
-        <div>⭐ {{ Math.round(score) }}</div>
+        <div>{{ Math.round(score) }}</div>
       </div>
 
       <div class="chart-container">
@@ -337,7 +337,7 @@ const chartOptions = computed(() => ({
   scales: {
     y: {
       min: 0,
-      max: 135, // Consistent Y-axis range
+      max: 60, // Consistent Y-axis range
       ticks: { color: 'black' },
       grid: { color: 'rgba(0,0,0,0.1)' }
     },
