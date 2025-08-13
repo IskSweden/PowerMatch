@@ -649,7 +649,6 @@ body {
   color: white;
   font-size: 3rem;
   z-index: 50;
-  background: rgba(0, 54, 69, 0.7);
 }
 
 
