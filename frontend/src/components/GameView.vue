@@ -4,11 +4,11 @@
       <h1>Loading PowerMatch…</h1>
     </div>
 
-    <div v-else-if="gameState === 'countdown'" class="loading-overlay">
-      <h1>Starting in {{ countdown }}…</h1>
-    </div>
-
     <div v-else>
+      <div v-if="gameState === 'countdown'" class="countdown-overlay">
+        <h1>Starting in {{ countdown }}…</h1>
+      </div>
+
       <div class="info-bar">
         <div>{{ remainingTime }}s</div>
         <h1>PowerMatch</h1>
@@ -591,6 +591,7 @@ body {
 }
 
 .game-wrapper {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -636,4 +637,21 @@ body {
   font-size: 3rem;
   z-index: 1000;
 }
+.countdown-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 3rem;
+  z-index: 50;
+  background: rgba(0, 54, 69, 0.7);
+}
+
+
+
 </style>
