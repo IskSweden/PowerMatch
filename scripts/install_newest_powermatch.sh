@@ -2,7 +2,8 @@
 
 echo "Removing old instance"
 cd ~/Documents
-rm -rf Powermatch/
+rm -rf PowerMatch || true
+rm -rf powermatch-venv || true
 
 echo "Pulling newest target_new branch from github"
 cd ~/Documents
