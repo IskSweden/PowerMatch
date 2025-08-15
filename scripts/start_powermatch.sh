@@ -1,19 +1,27 @@
 #!/bin/bash
 
 openchrome() {
-  xset s noblank
-  xset s off
 
-  xscreensaver &
+  # Define the URL to open in kiosk mode
+  URL="http://localhost:8000"
 
-  unclutter -idle 1 -root &
+  # Launch Chromium in kiosk mode in the background
+  # The ' & ' at the end runs the command asynchronously
+  chromium-browser --kiosk --incognito --no-first-run --disable-infobars "$URL" &
 
-  # Let Chromium think it always exited cleanly.
-  sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' '~/.config/chromium/Default/Preferences'
-  sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' '~/.config/chromium/Default/Preferences'
+  # Store the Process ID (PID) of the last background command
+  CHROMIUM_PID=$!
 
-  # Start Chromium.
-  chromium-browser --kiosk --noerrdialogs --disable-infobars http://localhost:8000
+  echo "Chromium launched with PID: $CHROMIUM_PID. Press Ctrl+P to close."
+
+  # Wait for Ctrl+P key press
+  xdotool search --onlyvisible --class chromium windowfocus key --clearmodifiers --window %1 Ctrl+p
+
+  # Kill the Chromium process when Ctrl+P is detected
+  kill $CHROMIUM_PID
+
+  echo "Chromium closed."
+
 }
 
 cd ~/Documents/PowerMatch
