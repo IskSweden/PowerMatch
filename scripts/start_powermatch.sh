@@ -14,8 +14,13 @@ CHROMIUM_PID=$!
 
 echo "Chromium launched with PID: $CHROMIUM_PID. Press Ctrl+P to close."
 
-sleep 3
-xdotool search --onlyvisible --class chromium windowfocus key --clearmodifiers --window %1 Ctrl+p
+while kill -0 $CHROMIUM_PID >/dev/null 2>&1; do
+  # Check if Ctrl+P is pressed using xdotool
+  if xdotool search --onlyvisible --class chromium key --clearmodifiers --window %1 Ctrl+p; then
+    break
+  fi
+  sleep 1
+done
 
 echo "Closing Chromium (PID: $CHROMIUM_PID) and powermatch (PID: $POWERMATCH_PID)..."
 kill $CHROMIUM_PID
