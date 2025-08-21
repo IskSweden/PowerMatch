@@ -1,1 +1,2 @@
 recursive-include powermatch/frontend/dist *
+include powermatch/data/normalized_curves.json

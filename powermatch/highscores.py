@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from .db import SessionLocal
-from .score import Score
+from . db import SessionLocal
+from . score import Score
 
 router = APIRouter()
 

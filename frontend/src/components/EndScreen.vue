@@ -1,20 +1,20 @@
 <template>
   <div class="wrapper" @keydown.enter="playAgain" tabindex="0">
     <div class="card">
-      <h1>🏁 Game Over</h1>
+      <h1>Game Over</h1>
 
       <p class="message">Well done, <strong>{{ name }}</strong>!</p>
       <p>Your score: <span class="score">{{ score }}</span></p>
       <p>Difficulty: <span class="difficulty">{{ difficulty }}</span></p>
 
       <div v-if="isHighscore" class="highlight">
-        🎉 New High Score!
+        New High Score!
       </div>
 
       <button ref="playButton" @click="playAgain">Play Again</button>
 
       <div class="leaderboard" v-if="highscores">
-        <h2>🏆 All-Time Top 5</h2>
+        <h2>All-Time Top 5</h2>
         <ul>
           <li v-for="(entry, i) in highscores.alltime" :key="'a' + i">
             <span class="rank">#{{ i + 1 }}</span>
@@ -41,6 +41,12 @@ const highscores = ref(null)
 const isHighscore = ref(false)
 const playButton = ref(null)
 
+
+const callHighscoreAPI = () => {
+  fetch('http://192.168.1.106/api/highscore') // REPLACE url
+    .catch(e => console.error('failed t call highscore API', e))
+}
+
 const fetchHighscores = async () => {
   try {
     const res = await fetch('/api/highscores')
@@ -49,6 +55,10 @@ const fetchHighscores = async () => {
 
     isHighscore.value = [...data.alltime, ...data.recent]
       .some(entry => entry.name === name.value && entry.score === +score.value)
+
+    if (isHighscore.value) {
+      callHighscoreAPI() // HIGHSCORE API CALL
+    }
   } catch (e) {
     console.error('Failed to fetch highscores:', e)
   }

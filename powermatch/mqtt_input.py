@@ -8,7 +8,7 @@ input_queue = asyncio.Queue()
 class MQTTInputHandler:
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self.broker = "raspberrypi.local"  # Change to correct MQTT broker address
-        self.topic = "/eniwa/energy/device/1091A8AB9138/status/evt" # Change to correct MQTT topic
+        self.topic = "Strommessung_PowerMatch/events/rpc" # Change to correct MQTT topic
         self.client = mqtt.Client()
         self.loop = loop  # store loop explicitly
 
@@ -20,21 +20,18 @@ class MQTTInputHandler:
         print(f"MQTT connecting to {self.broker} and subscribing to {self.topic}")
 
     def _on_connect(self, client, userdata, flags, rc):
-        print("✅ MQTT connected")
         client.subscribe(self.topic)
+        print("MQTT connected")
 
     def _on_message(self, client, userdata, msg):
-        #print(f"[MQTT] Received message on topic {msg.topic}: {msg.payload.decode()}") debugging
+        print(f"[MQTT] Received message on topic {msg.topic}: {msg.payload.decode()}")
 
         try:
-            payload = json.loads(msg.payload.decode())
-            reader_data = payload.get("reader_data", [])
-            watt_value = None
-            for item in reader_data:
-                if "1-0:1.7.0.255" in item:
-                    watt_value = float(item["1-0:1.7.0.255"])
-                    watt_value = watt_value * 1000 # kw to W
-                    break
+            decoded = msg.payload.decode()
+            payload = json.loads(decoded)
+            params = payload.get("params", {})
+            em_data = params.get("em:0", {})
+            watt_value = em_data.get("c_act_power")
 
             if watt_value is not None:
                 self.loop.call_soon_threadsafe(
@@ -42,7 +39,19 @@ class MQTTInputHandler:
                 )
                 print(f"[MQTT] Queued power: {watt_value}W")
             else:
-                print("[MQTT] ⚠️ Wattage key not found in reader_data.")
+                print("[MQTT] Wattage key not found in reader_data.")
 
         except Exception as e:
             print(f"[MQTT] Failed to parse message: {e}")
+
+
+
+async def clear_input_queue():
+    cleared = 0
+    while not input_queue.empty():
+        try:
+            input_queue.get_nowait()
+            cleared += 1
+        except asyncio.QueueEmpty:
+            break
+    print(f"[MQTT] Cleared {cleared} old input(s) from queue.")
